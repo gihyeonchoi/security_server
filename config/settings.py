@@ -23,7 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-y6)m0=5a4(nb^b&-t&yl*cfn2u#hyq9!66nt4(7ymi-e*7$!%w'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = True    
 
 ALLOWED_HOSTS = []
 
@@ -31,6 +31,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'RFID.apps.RfidConfig',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
