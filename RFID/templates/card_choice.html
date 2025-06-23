@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>카드 등록 선택</title>
+    <style>
+        .container {
+            max-width: 600px;
+            margin: 20px auto;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        .card-info {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .existing-card {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .choice-buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .btn {
+            flex: 1;
+            padding: 15px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            text-decoration: none;
+            text-align: center;
+            display: inline-block;
+            transition: all 0.3s;
+        }
+        .btn-add {
+            background-color: #28a745;
+            color: white;
+        }
+        .btn-add:hover {
+            background-color: #218838;
+        }
+        .btn-edit {
+            background-color: #17a2b8;
+            color: white;
+        }
+        .btn-edit:hover {
+            background-color: #138496;
+        }
+        .btn-cancel {
+            background-color: #6c757d;
+            color: white;
+        }
+        .btn-cancel:hover {
+            background-color: #5a6268;
+        }
+        .warning-icon {
+            font-size: 24px;
+            margin-right: 10px;
+        }
+        .card-details {
+            margin: 10px 0;
+        }
+        .card-details strong {
+            color: #333;
+        }
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-active {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status-inactive {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><span class="warning-icon">⚠️</span>중복된 RFID 카드 감지</h1>
+        
+        <div class="card-info">
+            <h3>태그된 RFID 정보</h3>
+            <div class="card-details">
+                <strong>RFID 코드:</strong> {{ rfid_code }}<br>
+                <strong>태그 시간:</strong> {{ created_at|date:"Y-m-d H:i:s" }}
+            </div>
+        </div>
+
+        <div class="existing-card">
+            <h3>기존 등록된 카드</h3>
+            <div class="card-details">
+                <strong>카드 별칭:</strong> {{ existing_card.card_alias }}<br>
+                <strong>보안 등급:</strong> {{ existing_card.card_level }}급<br>
+                <strong>등록자:</strong> {{ existing_card.who_add }}<br>
+                <strong>등록일:</strong> {{ existing_card.regist_date|date:"Y-m-d H:i:s" }}<br>
+                <strong>상태:</strong> 
+                {% if existing_card.is_active %}
+                    <span class="status-badge status-active">활성</span>
+                {% else %}
+                    <span class="status-badge status-inactive">비활성</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div style="background-color: #e7f3ff; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+            <h4>선택하세요:</h4>
+            <ul style="margin: 10px 0; padding-left: 20px;">
+                <li><strong>새 카드 추가:</strong> 기존 카드를 비활성화하고 새로운 카드로 등록합니다.</li>
+                <li><strong>기존 카드 수정:</strong> 기존 카드 정보를 수정합니다. (현재 미구현)</li>
+                <li><strong>취소:</strong> 메인 페이지로 돌아갑니다.</li>
+            </ul>
+        </div>
+
+        <div class="choice-buttons">
+            <a href="/RFID/card_add/{{ page_id }}/?action=add_new" class="btn btn-add">
+                새 카드 추가
+            </a>
+            <a href="/RFID/card_edit/{{ existing_card.id }}/" class="btn btn-edit">
+                기존 카드 수정
+            </a>
+            <a href="/RFID/" class="btn btn-cancel">
+                취소
+            </a>
+        </div>
+
+        <div style="margin-top: 20px; font-size: 14px; color: #666;">
+            <strong>주의:</strong> 새 카드 추가를 선택하면 기존 카드는 자동으로 비활성화됩니다.
+        </div>
+    </div>
+</body>
+</html>

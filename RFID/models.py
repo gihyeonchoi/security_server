@@ -76,7 +76,7 @@ class Card(models.Model):
     """
     card_key_value = models.CharField(
         max_length=20, 
-        unique=True,
+        # unique=True,
         verbose_name="카드 고유키",
         help_text="RFID 카드의 UID (Hex 형태)"
     )
