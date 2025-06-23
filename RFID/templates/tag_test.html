@@ -1,0 +1,65 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RFID 태그 테스트</title>
+    <style>
+        .tag-list {
+            margin: 20px 0;
+            min-height: 100px;
+            border: 2px dashed #ccc;
+            padding: 10px;
+        }
+        .tag-item {
+            cursor: pointer;
+            padding: 10px;
+            margin: 5px 0;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .tag-item:hover {
+            background-color: #e0e0e0;
+        }
+        .debug-info {
+            background-color: #e8f4f8;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>RFID 태그</h1>
+    
+    <!-- <div class="debug-info">
+        <strong>서버사이드 디버그 정보:</strong><br>
+        최근 태그 개수: {{ recent_tags|length }}<br>
+        {% for tag in recent_tags %}
+            - 코드: {{ tag.code }}, 시간: {{ tag.time }}, ID: {{ tag.page_id }}<br>
+        {% empty %}
+            (서버에서 전달된 태그 없음)
+        {% endfor %}
+    </div> -->
+    
+    <div id="instruction">RFID를 태그해주세요</div>
+    <div id="rfid-result"></div>
+    
+    <h2>최근 태그 목록 (1분 이내)</h2>
+    <div id="tag-list" class="tag-list">
+        <div style="color: #666; text-align: center;"> </div>
+    </div>
+    
+    <!-- <div class="debug-info">
+        <strong>JavaScript 콘솔을 확인하세요:</strong><br>
+        F12 → Console 탭에서 디버그 메시지 확인
+    </div> -->
+    
+    <!-- 수동 새로고침 버튼 -->
+    <button onclick="checkRFIDData()" style="padding: 10px; margin: 10px 0;">수동 새로고침</button>
+    
+    <script src="{% static 'tag_test/script.js' %}"></script>
+</body>
+</html>
