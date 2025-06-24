@@ -122,7 +122,7 @@ def card_add(request, page_id):
                 'who_add': who_add,
                 'is_active': request.POST.get('is_active') == 'true',
             }
-            
+        
             # 선택적 필드 처리
             valid_from = request.POST.get('valid_from')
             valid_until = request.POST.get('valid_until')

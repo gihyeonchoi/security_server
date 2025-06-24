@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RFID 카드 기록</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .info {
+            background-color: #e7f3fe;
+            border-left: 5px solid #2196F3;
+            padding: 10px 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        tr:hover {
+            background-color: #f9f9f9;
+            cursor: pointer;
+        }
+        tr.clickable:hover {
+            background-color: #f0f7ff;
+        }
+        .empty-message {
+            text-align: center;
+            padding: 20px;
+            color: #777;
+            font-style: italic;
+        }
+        .refresh-btn {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 14px;
+            margin: 10px 0;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .notification {
+            display: none;
+            background-color: #ffeb3b;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            text-align: center;
+            animation: fadeIn 0.5s;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .highlight {
+            animation: highlight 2s;
+        }
+        @keyframes highlight {
+            0% { background-color: #ffeb3b; }
+            100% { background-color: transparent; }
+        }
+        .timer {
+            font-size: 12px;
+            color: #777;
+            margin-left: 5px;
+        }
+        .fade-out {
+            opacity: 0;
+            transition: opacity 1s;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .auto-refresh {
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+            color: #666;
+        }
+        .auto-refresh input {
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>RFID 카드 기록</h1>
+        
+        <div class="info">
+            <p>이 페이지는 RFID 카드 태그 기록을 보여줍니다. 데이터는 화면에서 1분 후 자동으로 사라지며, 실제 시스템에서는 30분 후에 삭제됩니다.</p>
+            <p>레코드를 클릭하면 해당 페이지 ID로 새 창이 열립니다.</p>
+        </div>
+        
+        <div id="notification" class="notification">
+            새로운 RFID 카드가 태그되었습니다!
+        </div>
+        
+        <div class="controls">
+            <button class="refresh-btn" onclick="refreshData(true)">새로고침</button>
+            <div class="auto-refresh">
+                <input type="checkbox" id="auto-refresh" checked>
+                <label for="auto-refresh">자동 업데이트 사용</label>
+            </div>
+        </div>
+        
+        <table id="records-table">
+            <thead>
+                <tr>
+                    <th>RFID 코드</th>
+                    <th>시간</th>
+                    <th>페이지 ID</th>
+                </tr>
+            </thead>
+            <tbody id="records-body">
+                {% if records %}
+                    {% for record in records %}
+                    <tr id="record-{{ record.page_id }}" class="clickable" onclick="openPageId('{{ record.page_id }}')">
+                        <td>{{ record.code }}</td>
+                        <td>{{ record.time }} {% if record.remaining_seconds %}<span class="timer" id="timer-{{ record.page_id }}">({{ record.remaining_seconds|floatformat:"0" }}초 후 삭제)</span>{% endif %}</td>
+                        <td>{{ record.page_id }}</td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="3" class="empty-message">기록된 RFID 태그가 없습니다.</td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        // 마지막으로 확인한 시간
+        let lastCheckTime = null;
+        let recordTimers = {};  // 레코드 타이머를 저장할 객체
+        
+        // 페이지 로드 시 초기화
+        document.addEventListener('DOMContentLoaded', () => {
+            // 초기 데이터 로드
+            refreshData(false);
+            
+            // 자동 업데이트 체크박스 이벤트 리스너
+            document.getElementById('auto-refresh').addEventListener('change', function() {
+                if (this.checked) {
+                    startAutoCheck();
+                }
+            });
+            
+            // 자동 업데이트 시작
+            startAutoCheck();
+        });
+        
+        // 주기적으로 새 데이터 확인
+        let autoCheckInterval;
+        function startAutoCheck() {
+            // 이전 인터벌 정리
+            if (autoCheckInterval) {
+                clearInterval(autoCheckInterval);
+            }
+            
+            // 3초마다 새 데이터 확인 (10초보다 짧게 설정)
+            autoCheckInterval = setInterval(() => {
+                if (document.getElementById('auto-refresh').checked) {
+                    checkNewData();
+                }
+            }, 3000);
+        }
+        
+        // 새 데이터 확인만 하는 함수 (UI 갱신은 하지 않음)
+        function checkNewData() {
+            const url = `/RFID/get_records_json/?last_check=${lastCheckTime || ''}`;
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.has_new_records) {
+                        // 새 데이터가 있으면 알림 표시 및 데이터 갱신
+                        showNotification();
+                        updateRecords(data.records);
+                    } else {
+                        // 새 데이터가 없어도 타이머 업데이트
+                        updateTimers(data.records);
+                    }
+                    
+                    // 서버 시간 저장
+                    lastCheckTime = data.server_time;
+                })
+                .catch(error => {
+                    console.error('데이터를 가져오는 중 오류 발생:', error);
+                });
+        }
+        
+        // 전체 데이터 새로고침
+        function refreshData(showAnimation = true) {
+            fetch('/RFID/get_records_json/')
+                .then(response => response.json())
+                .then(data => {
+                    updateRecords(data.records, showAnimation);
+                    lastCheckTime = data.server_time;
+                })
+                .catch(error => {
+                    console.error('데이터를 가져오는 중 오류 발생:', error);
+                });
+        }
+        
+        // 새 알림 표시
+        function showNotification() {
+            const notification = document.getElementById('notification');
+            notification.style.display = 'block';
+            
+            // 3초 후 알림 숨기기
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 3000);
+        }
+        
+        // page_id로 새 창 열기
+        function openPageId(pageId) {
+            // URL 구성
+            // const url = `/RFID/card_check/${pageId}/`;
+            window.location.href = `/RFID/card_check/${pageId}/`;
+            // 새 창 열기
+            // window.open(url, '_blank', 'width=800,height=600');
+        }
+        
+        // 레코드 업데이트 함수
+        function updateRecords(records, showAnimation = true) {
+            const recordsBody = document.getElementById('records-body');
+            const currentIds = new Set(Object.keys(recordTimers));
+            
+            // 빈 테이블 초기화
+            if (records.length === 0) {
+                recordsBody.innerHTML = `
+                    <tr>
+                        <td colspan="3" class="empty-message">기록된 RFID 태그가 없습니다.</td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            // 빈 메시지가 있으면 제거
+            const emptyMessage = recordsBody.querySelector('.empty-message');
+            if (emptyMessage) {
+                emptyMessage.closest('tr').remove();
+            }
+            
+            // 기존 레코드 ID 추적
+            const existingIds = new Set();
+            document.querySelectorAll('[id^="record-"]').forEach(row => {
+                const id = row.id.replace('record-', '');
+                existingIds.add(id);
+            });
+            
+            // 테이블 전체 다시 그리기 (정렬 유지를 위해)
+            recordsBody.innerHTML = '';
+            
+            // 각 레코드 처리 (서버에서 이미 정렬된 상태)
+            records.forEach(record => {
+                const recordId = record.id || record.page_id;
+                const newRow = document.createElement('tr');
+                newRow.id = `record-${recordId}`;
+                newRow.className = 'clickable';
+                newRow.onclick = function() { openPageId(recordId); };
+                newRow.innerHTML = `
+                    <td>${record.code}</td>
+                    <td>${record.time} <span class="timer" id="timer-${recordId}">${formatRemainingTime(record.remaining_seconds)}</span></td>
+                    <td>${record.page_id}</td>
+                `;
+                
+                // 새 레코드면 애니메이션 효과 적용
+                if (!existingIds.has(recordId) && showAnimation) {
+                    newRow.classList.add('highlight');
+                }
+                
+                // 테이블에 행 추가
+                recordsBody.appendChild(newRow);
+                
+                // 타이머 시작 또는 업데이트
+                startOrUpdateTimer(recordId, record.remaining_seconds);
+                
+                // 처리된 ID 추적
+                currentIds.delete(recordId);
+            });
+            
+            // 목록에 없는 행 제거
+            currentIds.forEach(id => {
+                removeRecord(id);
+            });
+        }
+        
+        // 타이머 포맷팅
+        function formatRemainingTime(seconds) {
+            if (seconds <= 0) return "";
+            
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = seconds % 60;
+            
+            if (minutes > 0) {
+                return `(${minutes}분 ${remainingSeconds}초 후 삭제)`;
+            } else {
+                return `(${remainingSeconds}초 후 삭제)`;
+            }
+        }
+        
+        // 타이머 시작 또는 업데이트
+        function startOrUpdateTimer(recordId, remainingSeconds) {
+            // 이전 타이머가 있으면 정리
+            if (recordTimers[recordId]) {
+                clearInterval(recordTimers[recordId]);
+            }
+            
+            // 남은 시간이 없으면 바로 제거
+            if (remainingSeconds <= 0) {
+                removeRecord(recordId);
+                return;
+            }
+            
+            let secondsLeft = remainingSeconds;
+            
+            // 새 타이머 설정
+            recordTimers[recordId] = setInterval(() => {
+                secondsLeft--;
+                
+                // 타이머 업데이트
+                const timerElement = document.getElementById(`timer-${recordId}`);
+                if (timerElement) {
+                    timerElement.textContent = formatRemainingTime(secondsLeft);
+                }
+                
+                // 시간이 다 되면 행 제거
+                if (secondsLeft <= 0) {
+                    removeRecord(recordId);
+                } else if (secondsLeft <= 5) {
+                    // 5초 이하면 페이드 아웃 효과 시작
+                    const row = document.getElementById(`record-${recordId}`);
+                    if (row) {
+                        row.style.opacity = secondsLeft / 5;
+                    }
+                }
+            }, 1000);
+        }
+        
+        // 타이머만 업데이트
+        function updateTimers(records) {
+            records.forEach(record => {
+                const recordId = record.id || record.page_id;
+                const timerElement = document.getElementById(`timer-${recordId}`);
+                if (timerElement) {
+                    timerElement.textContent = formatRemainingTime(record.remaining_seconds);
+                }
+            });
+        }
+        
+        // 레코드 제거
+        function removeRecord(recordId) {
+            // 타이머 정리
+            if (recordTimers[recordId]) {
+                clearInterval(recordTimers[recordId]);
+                delete recordTimers[recordId];
+            }
+            
+            // 행 제거
+            const row = document.getElementById(`record-${recordId}`);
+            if (row) {
+                row.classList.add('fade-out');
+                setTimeout(() => {
+                    if (row.parentNode) {
+                        row.parentNode.removeChild(row);
+                        
+                        // 테이블이 비었는지 확인
+                        const recordsBody = document.getElementById('records-body');
+                        if (recordsBody.children.length === 0) {
+                            recordsBody.innerHTML = `
+                                <tr>
+                                    <td colspan="3" class="empty-message">기록된 RFID 태그가 없습니다.</td>
+                                </tr>
+                            `;
+                        }
+                    }
+                }, 1000); // 페이드 아웃 후 실제로 제거
+            }
+        }
+    </script>
+</body>
+</html>
