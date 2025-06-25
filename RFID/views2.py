@@ -2,12 +2,14 @@ from django.contrib.auth.views import login_required
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import render, redirect
 from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponseRedirect
 from django.contrib import messages
 import json
 import uuid
 from datetime import datetime
 from django.utils import timezone
 from datetime import timedelta
+from django.db import transaction
 
 # from RFID.models import Card
 from django.apps import apps
@@ -37,7 +39,7 @@ def card_tag(request):
                     'display_until': current_time + timedelta(minutes=1)  # 1분 후 표시 종료 시간
                 }
                 rfid_records.append(record)    # 태그 데이터 저장, 추후 한개씩 삭제
-                print(rfid_records)
+                # print(rfid_records)
                 # 30분이 지난 레코드 삭제 (실제 데이터 삭제)
                 clean_old_records_30min()
                 
@@ -171,10 +173,9 @@ def card_check(request, page_id):
     # print(f"카드체크 매칭 레코드 : {matching_record}")
     if not matching_record:
         messages.error(request, '링크가 만료되었거나 존재하지 않습니다.')
-        return redirect('RFID/rfid_records')
+        return redirect('view_records')
 
-    if request.method == 'POST':    # 폼 데이터가 전달되면 실행 (POST로 전달되니니)
-        # print("POST 데이터:", request.POST)
+    if request.method == 'POST':
         try:
             # 폼 데이터 가져오기
             card_key_value = request.POST.get('card_key_value')
@@ -186,24 +187,63 @@ def card_check(request, page_id):
             valid_from = request.POST.get('valid_from')
             valid_until = request.POST.get('valid_until')
             
-            # 문자열을 datetime 객체로 변환 (값이 있을 경우에만)
+            # 문자열을 datetime 객체로 변환
             valid_from = datetime.fromisoformat(valid_from) if valid_from else None
             valid_until = datetime.fromisoformat(valid_until) if valid_until else None
 
-            # 새 카드 생성
-            new_card = Card.objects.create(
-                card_key_value=card_key_value,
-                card_alias=card_alias,
-                card_level=card_level,
-                who_add=who_add,
-                is_active=is_active,
-                valid_from=valid_from,
-                valid_until=valid_until,
-                last_modify_who=who_add
-            )
-
-            messages.success(request, f'카드가 성공적으로 등록되었습니다. (카드별칭: {card_alias})')
-            return redirect('/RFID/rfid_records/')  # 성공 시 리다이렉트할 페이지
+            # 중복 카드 확인
+            existing_cards = Card.objects.filter(card_key_value=card_key_value)
+            active_cards = existing_cards.filter(is_active=True)
+            
+            # 이미 활성화된 카드가 있는지 확인
+            has_active_card = active_cards.exists()
+            
+            # 확인 단계를 거쳤는지 확인
+            confirm_duplicate = request.POST.get('confirm_duplicate') == 'yes'
+            
+            if has_active_card and is_active and not confirm_duplicate:
+                # 사용자에게 알림 및 선택지 제공
+                active_card = active_cards.first()
+                context = {
+                    'rfid_code': matching_record['code'],
+                    'who_add': who_add,
+                    'duplicate_card': True,
+                    'existing_card': active_card,
+                    'form_data': {
+                        'card_alias': card_alias,
+                        'card_level': card_level,
+                        'is_active': is_active,
+                        'valid_from': valid_from.isoformat() if valid_from else '',
+                        'valid_until': valid_until.isoformat() if valid_until else '',
+                    }
+                }
+                return render(request, 'card_add.html', context)
+            
+            # 트랜잭션으로 처리하여 데이터 일관성 유지
+            with transaction.atomic():
+                # 새 카드가 활성화되는 경우 같은 카드키를 가진 다른 카드를 모두 비활성화
+                if is_active:
+                    existing_cards.update(is_active=False, last_modify_who=who_add)
+                
+                # 새 카드 생성
+                new_card = Card.objects.create(
+                    card_key_value=card_key_value,
+                    card_alias=card_alias,
+                    card_level=card_level,
+                    who_add=who_add,
+                    is_active=is_active,
+                    valid_from=valid_from,
+                    valid_until=valid_until,
+                    last_modify_who=who_add
+                )
+            
+            # 기존 카드가 있었는지에 따라 메시지 다르게 표시
+            if has_active_card and is_active:
+                messages.success(request, f'기존 활성화된 카드를 비활성화하고 새 카드({card_alias})를 등록했습니다.')
+            else:
+                messages.success(request, f'카드가 성공적으로 등록되었습니다. (카드별칭: {card_alias})')
+            
+            return HttpResponseRedirect('/RFID/rfid_records/')
 
         except Exception as e:
             messages.error(request, f'카드 등록 중 오류가 발생했습니다: {str(e)}')

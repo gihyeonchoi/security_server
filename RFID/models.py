@@ -154,6 +154,12 @@ class Card(models.Model):
     def can_access_room(self, room):
         """특정 방 출입 가능 여부 확인"""
         return self.is_valid() and room.can_access(self.card_level)
+    
+    def save(self, *args, **kwargs):
+        """새 카드 등록 시 나머지 중복 카드들 is_active 모두 비활성화"""
+        if self.is_active:
+            Card.objects.filter(card_key_value=self.card_key_value).exclude(pk=self.pk).update(is_active=False)
+        super().save(*args, **kwargs)
 
 
 class CardModifyLog(models.Model):
