@@ -72,7 +72,7 @@ def get_visible_records():
     # 현재 시간이 display_until 보다 작은 레코드만 반환 (표시 시간이 지나지 않은 것들)
     return [record for record in rfid_records if current_time < record.get('display_until', record['time'] + timedelta(minutes=1))]
 
-def view_records(request):
+def view_tag(request):
     """HTML에서 RFID 레코드를 볼 수 있는 페이지"""
     if not request.user.is_authenticated or not request.user.is_superuser:
         return HttpResponse("접근 권한이 없습니다.".encode('utf-8'))
@@ -106,7 +106,7 @@ def view_records(request):
     context = {
         'records': formatted_records
     }
-    return render(request, 'rfid_records.html', context)
+    return render(request, 'view_tag.html', context)
 
 def get_records_json(request):
     """AJAX 요청을 위한 JSON 형식의 레코드 데이터 제공"""
@@ -159,11 +159,14 @@ def get_records_json(request):
     })
 
 @login_required
-def card_check(request, page_id):
-    """ 카드 상태 체크 """
+def card_add(request, page_id):
+    """ 카드 등록 페이지 """
     if not request.user.is_authenticated or not request.user.is_superuser:
         return HttpResponse("접근 권한이 없습니다.".encode('utf-8'))
     global rfid_records
+    # print(f"페이지 아이디 : {page_id}")
+    # print(f"현재 태그 개수 : {len(rfid_records)} 개")
+    # print(f"현재 태그 : {rfid_records}")
     matching_record = None
     who_add = request.user.get_full_name() or request.user.username
     for record in rfid_records:     # 카드 정보 유효한지 검사
@@ -173,7 +176,7 @@ def card_check(request, page_id):
     # print(f"카드체크 매칭 레코드 : {matching_record}")
     if not matching_record:
         messages.error(request, '링크가 만료되었거나 존재하지 않습니다.')
-        return redirect('view_records')
+        return redirect('view_tag')
 
     if request.method == 'POST':
         try:
@@ -237,13 +240,15 @@ def card_check(request, page_id):
                     last_modify_who=who_add
                 )
             
+            # 등록된 카드 정보 지우기
+            rfid_records = [record for record in rfid_records if record.get('page_id') != page_id]
             # 기존 카드가 있었는지에 따라 메시지 다르게 표시
             if has_active_card and is_active:
                 messages.success(request, f'기존 활성화된 카드를 비활성화하고 새 카드({card_alias})를 등록했습니다.')
             else:
                 messages.success(request, f'카드가 성공적으로 등록되었습니다. (카드별칭: {card_alias})')
             
-            return HttpResponseRedirect('/RFID/rfid_records/')
+            return HttpResponseRedirect('/RFID/view_tag/')
 
         except Exception as e:
             messages.error(request, f'카드 등록 중 오류가 발생했습니다: {str(e)}')
