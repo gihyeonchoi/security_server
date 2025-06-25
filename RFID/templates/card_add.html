@@ -78,6 +78,49 @@
             <p>카드 ID: <strong id="card_key_display">{{ rfid_code }}</strong></p>
         </div>
 
+        {% if duplicate_card %}
+            <div class="card-info" style="background-color: #fff3cd; border-left-color: #ffc107;">
+                <h3>카드 중복 알림</h3>
+                <p>해당 카드는 이미 활성화된 상태로 등록되어 있습니다. 기존 카드를 비활성화하고 새로 추가하시겠습니까?</p>
+                <p><strong>기존 활성화 카드 정보:</strong></p>
+                <ul>
+                    <li>카드 별칭: {{ existing_card.card_alias }}</li>
+                    <li>등록자: {{ existing_card.who_add }}</li>
+                    <li>등록일: {{ existing_card.regist_date|date:"Y-m-d H:i:s" }}</li>
+                    <li>보안 등급: {{ existing_card.card_level }}</li>
+                </ul>
+                
+                <form id="duplicateForm" method="POST">
+                    {% csrf_token %}
+                    <!-- 기존 폼 데이터를 hidden 필드로 유지 -->
+                    <input type="hidden" name="card_key_value" value="{{ rfid_code }}">
+                    <input type="hidden" name="card_alias" value="{{ form_data.card_alias }}">
+                    <input type="hidden" name="card_level" value="{{ form_data.card_level }}">
+                    {% if form_data.is_active %}
+                    <input type="hidden" name="is_active" value="on">
+                    {% endif %}
+                    {% if form_data.valid_from %}
+                    <input type="hidden" name="valid_from" value="{{ form_data.valid_from }}">
+                    {% endif %}
+                    {% if form_data.valid_until %}
+                    <input type="hidden" name="valid_until" value="{{ form_data.valid_until }}">
+                    {% endif %}
+                    
+                    <!-- 확인 플래그 -->
+                    <input type="hidden" name="confirm_duplicate" value="yes">
+                    
+                    <div style="display: flex; gap: 10px; margin-top: 15px;">
+                        <button type="submit" class="submit-btn" style="background-color: #ffc107; color: #000;">
+                            확인, 기존 카드 비활성화 후 새로 추가
+                        </button>
+                        <button type="button" class="submit-btn" style="background-color: #6c757d;" onclick="window.history.back()">
+                            취소
+                        </button>
+                    </div>
+                </form>
+            </div>
+        {% endif %}
+
         <form id="cardAddForm" method="POST">
             {% csrf_token %}
             
