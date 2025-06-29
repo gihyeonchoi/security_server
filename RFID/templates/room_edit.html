@@ -1,0 +1,306 @@
+<!-- templates/room_edit.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>방 정보 수정 - {{ room.name }}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5; 
+            color: #333;
+            padding: 20px;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 { 
+            font-size: 24px; 
+            margin-bottom: 10px;
+        }
+        .info-box {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .form-container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #555;
+        }
+        input[type="text"], select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        input[type="text"]:read-only {
+            background: #f8f9fa;
+            cursor: not-allowed;
+        }
+        .help-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        .warning-box {
+            background: #fff3cd;
+            border: 1px solid #ffeeba;
+            color: #856404;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .device-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .device-info-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        .device-info-item:last-child {
+            margin-bottom: 0;
+        }
+        .room-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+            border-left: 3px solid #007bff;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 12px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        .btn-primary:hover { background: #0056b3; }
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-secondary:hover { background: #545b62; }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-danger:hover { background: #c82333; }
+        .messages {
+            margin-bottom: 20px;
+        }
+        .message {
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .door-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .door-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .door-open { background: #28a745; }
+        .door-closed { background: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        {% if messages %}
+        <div class="messages">
+            {% for message in messages %}
+            <div class="message {{ message.tags }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="header">
+            <h1>방 정보 수정</h1>
+            <p style="color: #666; margin-top: 5px;">{{ room.name }} - {{ room.location }}</p>
+        </div>
+
+        <div class="device-info">
+            <h3 style="margin-bottom: 10px; font-size: 16px;">기기 정보</h3>
+            <div class="device-info-item">
+                <span>기기 ID:</span>
+                <strong>{{ room.device_id }}</strong>
+            </div>
+            <div class="device-info-item">
+                <span>등록일:</span>
+                <span>{{ room.created_at|date:"Y-m-d H:i:s" }}</span>
+            </div>
+            <div class="device-info-item">
+                <span>현재 문 상태:</span>
+                <span class="door-status">
+                    <span class="door-indicator {% if room.door_status %}door-open{% else %}door-closed{% endif %}"></span>
+                    {% if room.door_status %}열림{% else %}닫힘{% endif %}
+                    {% if room.last_door_change %}
+                        ({{ room.last_door_change|timesince }} 전)
+                    {% endif %}
+                </span>
+            </div>
+        </div>
+
+        <div class="room-stats">
+            <div class="stat-card">
+                <div class="stat-value">{{ room.access_logs.count }}</div>
+                <div class="stat-label">전체 출입 시도</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ granted_count|default:"0" }}</div>
+                <div class="stat-label">출입 허용</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ room.door_logs.count }}</div>
+                <div class="stat-label">문 상태 변경</div>
+            </div>
+        </div>
+
+        <form method="post" class="form-container">
+            {% csrf_token %}
+            
+            <div class="warning-box">
+                <strong>주의:</strong> 기기 ID는 변경할 수 없습니다. 다른 기기로 교체하려면 이 방을 삭제하고 새로 등록하세요.
+            </div>
+
+            <div class="form-group">
+                <label for="name">방 이름 *</label>
+                <input type="text" id="name" name="name" value="{{ room.name }}" required>
+                <div class="help-text">방을 구분할 수 있는 명확한 이름을 입력하세요.</div>
+            </div>
+
+            <div class="form-group">
+                <label for="location">방 위치 *</label>
+                <input type="text" id="location" name="location" value="{{ room.location }}" required>
+                <div class="help-text">방의 물리적 위치를 상세히 입력하세요.</div>
+            </div>
+
+            <div class="form-group">
+                <label for="device_id">아두이노 기기 ID</label>
+                <input type="text" id="device_id" value="{{ room.device_id }}" readonly>
+                <div class="help-text">기기 ID는 보안상 변경할 수 없습니다.</div>
+            </div>
+
+            <div class="form-group">
+                <label for="required_level">필요 보안 등급 *</label>
+                <select id="required_level" name="required_level" required>
+                    <option value="0" {% if room.required_level == 0 %}selected{% endif %}>레벨 0 (최고 권한 필요)</option>
+                    <option value="1" {% if room.required_level == 1 %}selected{% endif %}>레벨 1</option>
+                    <option value="2" {% if room.required_level == 2 %}selected{% endif %}>레벨 2</option>
+                    <option value="3" {% if room.required_level == 3 %}selected{% endif %}>레벨 3</option>
+                    <option value="4" {% if room.required_level == 4 %}selected{% endif %}>레벨 4</option>
+                    <option value="5" {% if room.required_level == 5 %}selected{% endif %}>레벨 5 (최저 권한)</option>
+                </select>
+                <div class="help-text">이 등급 이하의 카드만 출입 가능합니다.</div>
+            </div>
+
+            <div class="form-group">
+                <label>활성 상태</label>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="is_enabled" name="is_enabled" {% if room.is_enabled %}checked{% endif %}>
+                    <label for="is_enabled" style="font-weight: normal; margin-bottom: 0;">방 사용 가능</label>
+                </div>
+                <div class="help-text">체크 해제 시 모든 출입이 차단됩니다.</div>
+            </div>
+
+            <div class="btn-group">
+                <button type="submit" class="btn-primary">수정 저장</button>
+                <button type="button" class="btn-secondary" onclick="window.location.href='/RFID/room_list/'">취소</button>
+                <button type="button" class="btn-danger" onclick="viewDoorLogs()">문 상태 로그</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        function viewDoorLogs() {
+            window.open(`/RFID/room_door_logs/{{ room.id }}/`, 'door_logs', 'width=1000,height=700');
+        }
+
+        // 폼 제출 전 확인
+        document.querySelector('form').addEventListener('submit', function(e) {
+            if (!confirm('방 정보를 수정하시겠습니까?')) {
+                e.preventDefault();
+                return false;
+            }
+        });
+    </script>
+</body>
+</html>

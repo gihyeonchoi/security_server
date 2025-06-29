@@ -5,6 +5,7 @@ from . import views2
 from . import card_list
 from . import card_modify
 from . import card_log
+from . import views_room
 
 urlpatterns = [
     path('', views.tag_test, name='tag_test'),
@@ -33,4 +34,15 @@ urlpatterns = [
     # 카드 사용 로그
     path('card_logs/<int:card_id>/', card_log.card_logs, name='card_logs'),
     path('card_logs_export/<int:card_id>/', card_log.card_logs_export, name='card_logs_export'),
+
+    # Room 관리
+    path('room_list/', views_room.room_list, name='room_list'),
+    path('room_add/', views_room.room_add, name='room_add'),
+    path('room_edit/<int:room_id>/', views_room.room_edit, name='room_edit'),
+    
+    # Module 관리
+    path('module_list/', views_room.module_list, name='module_list'),
+    
+    # Ajax
+    path('check_device_availability/', views_room.check_device_availability, name='check_device_availability'),
 ]  

@@ -1,0 +1,270 @@
+<!-- templates/module_list.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>아두이노 모듈 관리</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5; 
+            color: #333;
+            padding: 20px;
+        }
+        .container { max-width: 900px; margin: 0 auto; }
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 { font-size: 24px; margin-bottom: 10px; }
+        .add-form {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .form-inline {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        .btn-primary:hover { background: #0056b3; }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+            font-size: 12px;
+            padding: 5px 10px;
+        }
+        .btn-danger:hover { background: #c82333; }
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        .module-table {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+        .status-used {
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .status-available {
+            background: #e8f5e9;
+            color: #388e3c;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .messages {
+            margin-bottom: 20px;
+        }
+        .message {
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .info-text {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .nav-links {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        {% if messages %}
+        <div class="messages">
+            {% for message in messages %}
+            <div class="message {{ message.tags }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="header">
+            <h1>아두이노 모듈 관리</h1>
+            <p style="color: #666; margin-top: 5px;">RFID 리더기가 설치된 아두이노 모듈을 관리합니다.</p>
+        </div>
+
+        <div class="info-text">
+            <strong>사용 방법:</strong><br>
+            1. 아두이노 기기의 Preferences에서 설정한 ap_name을 확인합니다.<br>
+            2. 해당 ap_name을 아래에 입력하여 모듈을 등록합니다.<br>
+            3. 등록된 모듈만 Room에 연결할 수 있습니다.
+        </div>
+
+        <form method="post" class="add-form">
+            {% csrf_token %}
+            <h3 style="margin-bottom: 15px;">새 모듈 등록</h3>
+            <div class="form-inline">
+                <input type="text" 
+                       name="device_id" 
+                       id="device_id"
+                       placeholder="아두이노 ap_name 입력 (예: Q1W2E3R4)" 
+                       pattern="[A-Z0-9]{8}" 
+                       maxlength="8"
+                       title="8자리 대문자 영어와 숫자만 입력 가능합니다"
+                       required>
+                <button type="submit" class="btn btn-primary">등록</button>
+            </div>
+            <div style="margin-top: 5px; font-size: 12px; color: #666;">
+                * 정확히 8자리의 대문자 영어와 숫자 조합만 가능합니다
+            </div>
+        </form>
+
+        <div class="module-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>모듈 ID</th>
+                        <th>상태</th>
+                        <th>사용 중인 방</th>
+                        <th>작업</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for module in modules %}
+                    <tr>
+                        <td><strong>{{ module.device_id }}</strong></td>
+                        <td>
+                            {% if module.room %}
+                                <span class="status-used">사용 중</span>
+                            {% else %}
+                                <span class="status-available">사용 가능</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if module.room %}
+                                {{ module.room.name }} ({{ module.room.location }})
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if not module.room %}
+                                <a href="?delete={{ module.id }}" class="btn btn-danger" 
+                                   onclick="return confirm('정말 삭제하시겠습니까?')">삭제</a>
+                            {% else %}
+                                <span style="color: #999; font-size: 12px;">사용 중</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4" class="empty-state">
+                            등록된 모듈이 없습니다.<br>
+                            위 양식을 사용하여 첫 번째 모듈을 등록하세요.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="nav-links">
+            <a href="/RFID/room_list/" class="btn btn-secondary">방 목록</a>
+            <a href="/RFID/room_add/" class="btn btn-primary">새 방 등록</a>
+        </div>
+    </div>
+
+    <script>
+        // 대문자와 숫자만 입력 가능하도록 제한
+        document.getElementById('device_id').addEventListener('input', function(e) {
+            // 소문자를 대문자로 자동 변환
+            this.value = this.value.toUpperCase();
+            
+            // 대문자 영어와 숫자 이외의 문자 제거
+            this.value = this.value.replace(/[^A-Z0-9]/g, '');
+            
+            // 8자리 초과 시 잘라내기
+            if (this.value.length > 8) {
+                this.value = this.value.slice(0, 8);
+            }
+        });
+
+        // 붙여넣기 시에도 검증
+        document.getElementById('device_id').addEventListener('paste', function(e) {
+            e.preventDefault();
+            let paste = (e.clipboardData || window.clipboardData).getData('text');
+            paste = paste.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+            this.value = paste;
+        });
+
+        // 폼 제출 전 최종 검증
+        document.querySelector('.add-form').addEventListener('submit', function(e) {
+            const deviceId = document.getElementById('device_id').value;
+            if (!/^[A-Z0-9]{8}$/.test(deviceId)) {
+                e.preventDefault();
+                alert('기기 ID는 정확히 8자리의 대문자 영어와 숫자 조합이어야 합니다.');
+                return false;
+            }
+        });
+    </script>
+</body>
+</html>

@@ -20,7 +20,19 @@ rfid_records = []   # RFID 카드 데이터 저장용
 
 def use_card(request):
     """ 카드로 문 열때 인증 관리 """
-    return
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            rfid_code = data.get('rfid_code')
+            post_device_id = data.get('device_id')
+            match_device = Card.objects.filter(device_id=post_device_id)
+            
+
+        except json.JSONDecodeError as e:
+            return JsonResponse({'status': 'error', 'message': 'WRONG DATA TYPE'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)})
+    return JsonResponse({'status': 'error', 'message': 'WRONG DATA'})   
 
 @csrf_exempt
 def card_tag(request):
@@ -29,10 +41,6 @@ def card_tag(request):
         try:
             data = json.loads(request.body)
             rfid_code = data.get('rfid_code')
-
-            # 방 열때 사용. 새로 함수 만들어야함
-            post_device_id = data.get('device_id')
-            match_device = Card.objects.filter(device_id=post_device_id)
 
             if rfid_code:
                 page_id = str(uuid.uuid4())     # 새 페이지 이름으로 랜덤값 생성

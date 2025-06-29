@@ -1,0 +1,380 @@
+<!-- templates/room_list.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>방 목록</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5; 
+            color: #333;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .header { 
+            background: white; 
+            padding: 20px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .header h1 { font-size: 24px; }
+        .stats { display: flex; gap: 20px; }
+        .stat-box {
+            padding: 10px 20px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border-left: 3px solid #007bff;
+        }
+        .search-bar {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .search-form {
+            display: flex;
+            gap: 10px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        .btn-primary:hover { background: #0056b3; }
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-secondary:hover { background: #545b62; }
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        .btn-sm {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+        .room-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+        }
+        .room-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            transition: transform 0.2s;
+        }
+        .room-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        .room-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
+        }
+        .room-name {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        .room-location {
+            color: #666;
+            font-size: 14px;
+        }
+        .room-status {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status-enabled {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-disabled {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .room-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 15px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        .info-item {
+            display: flex;
+            flex-direction: column;
+        }
+        .info-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 2px;
+        }
+        .info-value {
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .level-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .level-0 { background: #dc3545; color: white; }
+        .level-1 { background: #fd7e14; color: white; }
+        .level-2 { background: #ffc107; color: #333; }
+        .level-3 { background: #28a745; color: white; }
+        .level-4 { background: #17a2b8; color: white; }
+        .level-5 { background: #6c757d; color: white; }
+        .room-stats {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+        .stat {
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 20px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+        }
+        .room-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .room-actions .btn {
+            flex: 1;
+            text-align: center;
+        }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 5px;
+            margin-top: 30px;
+        }
+        .page-link {
+            padding: 8px 12px;
+            border: 1px solid #dee2e6;
+            text-decoration: none;
+            color: #007bff;
+            border-radius: 4px;
+        }
+        .page-link:hover { background: #e9ecef; }
+        .page-link.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .empty-state h2 {
+            color: #666;
+            margin-bottom: 10px;
+        }
+        .door-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 12px;
+            color: #666;
+        }
+        .door-status-icon {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+        .door-open { background: #28a745; }
+        .door-closed { background: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-top">
+                <h1>방 목록</h1>
+                <div>
+                    <a href="/RFID/module_list/" class="btn btn-secondary">모듈 관리</a>
+                    <a href="/RFID/room_add/" class="btn btn-primary">새 방 등록</a>
+                </div>
+            </div>
+            <div class="stats">
+                <div class="stat-box">
+                    <strong>전체 방:</strong> {{ total_count }}개
+                </div>
+                <div class="stat-box">
+                    <strong>활성 방:</strong> {{ active_count }}개
+                </div>
+            </div>
+        </div>
+
+        <div class="search-bar">
+            <form method="get" class="search-form">
+                <input type="text" name="search" value="{{ search }}" placeholder="방 이름, 위치, 기기 ID로 검색">
+                <button type="submit" class="btn btn-primary">검색</button>
+                {% if search %}
+                <a href="?" class="btn btn-secondary">초기화</a>
+                {% endif %}
+            </form>
+        </div>
+
+        {% if rooms %}
+        <div class="room-grid">
+            {% for room in rooms %}
+            <div class="room-card">
+                <div class="room-header">
+                    <div>
+                        <div class="room-name">{{ room.name }}</div>
+                        <div class="room-location">{{ room.location }}</div>
+                    </div>
+                    <div>
+                        {% if room.is_enabled %}
+                            <span class="room-status status-enabled">활성</span>
+                        {% else %}
+                            <span class="room-status status-disabled">비활성</span>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="room-info">
+                    <div class="info-item">
+                        <span class="info-label">기기 ID</span>
+                        <span class="info-value">{{ room.device_id }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">필요 등급</span>
+                        <span class="info-value">
+                            <span class="level-badge level-{{ room.required_level }}">
+                                레벨 {{ room.required_level }}
+                            </span>
+                        </span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">문 상태</span>
+                        <span class="info-value">
+                            <span class="door-indicator">
+                                <span class="door-status-icon {% if room.door_status %}door-open{% else %}door-closed{% endif %}"></span>
+                                {% if room.door_status %}열림{% else %}닫힘{% endif %}
+                            </span>
+                        </span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">등록일</span>
+                        <span class="info-value">{{ room.created_at|date:"Y-m-d" }}</span>
+                    </div>
+                </div>
+                
+                <div class="room-stats">
+                    <div class="stat">
+                        <div class="stat-number">{{ room.access_count }}</div>
+                        <div class="stat-label">전체 출입</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">{{ room.granted_count }}</div>
+                        <div class="stat-label">허용</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">
+                            {% if room.access_count > 0 %}
+                                {{ room.granted_count|floatformat:0 }}%
+                            {% else %}
+                                -
+                            {% endif %}
+                        </div>
+                        <div class="stat-label">성공률</div>
+                    </div>
+                </div>
+                
+                <div class="room-actions">
+                    <a href="/RFID/room_edit/{{ room.id }}/" class="btn btn-primary btn-sm">수정</a>
+                    <a href="#" onclick="viewRoomLogs({{ room.id }})" class="btn btn-secondary btn-sm">로그</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <h2>등록된 방이 없습니다</h2>
+            <p>새 방을 등록하려면 먼저 모듈을 등록해야 합니다.</p>
+            <div style="margin-top: 20px;">
+                <a href="/RFID/module_list/" class="btn btn-secondary">모듈 관리</a>
+                <a href="/RFID/room_add/" class="btn btn-primary">새 방 등록</a>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if rooms.has_other_pages %}
+        <div class="pagination">
+            {% if rooms.has_previous %}
+                <a href="?page={{ rooms.previous_page_number }}&search={{ search }}" class="page-link">이전</a>
+            {% endif %}
+            
+            {% for num in rooms.paginator.page_range %}
+                {% if rooms.number == num %}
+                    <span class="page-link active">{{ num }}</span>
+                {% elif num > rooms.number|add:'-3' and num < rooms.number|add:'3' %}
+                    <a href="?page={{ num }}&search={{ search }}" class="page-link">{{ num }}</a>
+                {% endif %}
+            {% endfor %}
+            
+            {% if rooms.has_next %}
+                <a href="?page={{ rooms.next_page_number }}&search={{ search }}" class="page-link">다음</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        function viewRoomLogs(roomId) {
+            // 방별 출입 로그 보기 (추후 구현)
+            alert('방별 출입 로그 기능은 추후 구현 예정입니다.');
+        }
+    </script>
+</body>
+</html>
