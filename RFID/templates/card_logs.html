@@ -1,0 +1,374 @@
+<!-- templates/card_logs.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>카드 사용 로그 - {{ card.card_alias }}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5; 
+            color: #333;
+            padding: 20px;
+        }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .header h1 { font-size: 22px; margin-bottom: 10px; }
+        .card-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+        .info-item {
+            display: flex;
+            flex-direction: column;
+        }
+        .info-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 2px;
+        }
+        .info-value {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+        }
+        .stat-granted { color: #28a745; }
+        .stat-denied { color: #dc3545; }
+        .filters {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .filter-row {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: end;
+        }
+        .filter-group {
+            flex: 1;
+            min-width: 150px;
+        }
+        .filter-group label {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        input[type="date"], select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        .btn-primary:hover { background: #0056b3; }
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-export {
+            background: #28a745;
+            color: white;
+        }
+        .btn-export:hover { background: #218838; }
+        .logs-table {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        td { font-size: 14px; }
+        .result-granted {
+            color: #28a745;
+            font-weight: 500;
+        }
+        .result-denied {
+            color: #dc3545;
+            font-weight: 500;
+        }
+        .result-error {
+            color: #fd7e14;
+            font-weight: 500;
+        }
+        .room-stats {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .room-stats h3 {
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+        .room-stat-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .room-stat-item:last-child { border-bottom: none; }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 5px;
+            margin-top: 20px;
+        }
+        .page-link {
+            padding: 8px 12px;
+            border: 1px solid #dee2e6;
+            text-decoration: none;
+            color: #007bff;
+            border-radius: 4px;
+        }
+        .page-link:hover { background: #e9ecef; }
+        .page-link.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        .close-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+        }
+        .close-btn:hover { color: #333; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <span class="close-btn" onclick="window.close()">×</span>
+        
+        <div class="header">
+            <h1>카드 사용 로그</h1>
+            <div class="card-info">
+                <div class="info-item">
+                    <span class="info-label">카드 별칭</span>
+                    <span class="info-value">{{ card.card_alias }}</span>
+                </div>
+                <div class="filter-group">
+                    <label>방</label>
+                    <select name="room">
+                        <option value="">전체</option>
+                        {% for room in rooms %}
+                        <option value="{{ room.id }}" {% if room_filter == room.id|stringformat:"d" %}selected{% endif %}>{{ room.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="filter-group" style="align-self: flex-end;">
+                    <button type="submit" class="btn btn-primary">검색</button>
+                    <a href="?" class="btn btn-secondary">초기화</a>
+                    <a href="/RFID/card_logs_export/{{ card.id }}/" class="btn btn-export">CSV 내보내기</a>
+                </div>
+            </div>
+        </form>
+
+        <div class="logs-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>사용일시</th>
+                        <th>방 이름</th>
+                        <th>출입 결과</th>
+                        <th>거부 사유</th>
+                        <th>응답시간</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                    <tr>
+                        <td>{{ log.use_date|date:"Y-m-d H:i:s" }}</td>
+                        <td>{{ log.room.name|default:log.room_name_backup }}</td>
+                        <td>
+                            <span class="result-{{ log.access_result }}">
+                                {{ log.get_access_result_display }}
+                            </span>
+                        </td>
+                        <td>{{ log.denial_reason|default:"-" }}</td>
+                        <td>
+                            {% if log.server_response_time %}
+                                {{ log.server_response_time|floatformat:1 }}ms
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" style="text-align: center; padding: 40px;">
+                            사용 로그가 없습니다.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if logs.has_other_pages %}
+        <div class="pagination">
+            {% if logs.has_previous %}
+                <a href="?page={{ logs.previous_page_number }}&date_from={{ date_from }}&date_to={{ date_to }}&result={{ result_filter }}&room={{ room_filter }}" class="page-link">이전</a>
+            {% endif %}
+            
+            {% for num in logs.paginator.page_range %}
+                {% if logs.number == num %}
+                    <span class="page-link active">{{ num }}</span>
+                {% elif num > logs.number|add:'-3' and num < logs.number|add:'3' %}
+                    <a href="?page={{ num }}&date_from={{ date_from }}&date_to={{ date_to }}&result={{ result_filter }}&room={{ room_filter }}" class="page-link">{{ num }}</a>
+                {% endif %}
+            {% endfor %}
+            
+            {% if logs.has_next %}
+                <a href="?page={{ logs.next_page_number }}&date_from={{ date_from }}&date_to={{ date_to }}&result={{ result_filter }}&room={{ room_filter }}" class="page-link">다음</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        // 날짜 입력 시 오늘 날짜를 최대값으로 설정
+        document.addEventListener('DOMContentLoaded', function() {
+            const today = new Date().toISOString().split('T')[0];
+            document.querySelector('input[name="date_from"]').setAttribute('max', today);
+            document.querySelector('input[name="date_to"]').setAttribute('max', today);
+        });
+    </script>
+</body>
+</html><div class="info-item">
+                    <span class="info-label">카드 키</span>
+                    <span class="info-value">{{ card.card_key_value }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">보안 등급</span>
+                    <span class="info-value">레벨 {{ card.card_level }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">상태</span>
+                    <span class="info-value">{% if card.is_active %}활성{% else %}비활성{% endif %}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value">{{ total_logs }}</div>
+                <div class="stat-label">전체 사용</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value stat-granted">{{ granted_count }}</div>
+                <div class="stat-label">허용</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value stat-denied">{{ denied_count }}</div>
+                <div class="stat-label">거부</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">
+                    {% if total_logs > 0 %}
+                        {{ granted_count|floatformat:0 }}%
+                    {% else %}
+                        -
+                    {% endif %}
+                </div>
+                <div class="stat-label">성공률</div>
+            </div>
+        </div>
+
+        {% if room_stats %}
+        <div class="room-stats">
+            <h3>자주 사용하는 방 TOP 5</h3>
+            {% for stat in room_stats %}
+            <div class="room-stat-item">
+                <span>{{ stat.room__name|default:"삭제된 방" }}</span>
+                <span>{{ stat.count }}회</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <form method="get" class="filters">
+            <div class="filter-row">
+                <div class="filter-group">
+                    <label>시작일</label>
+                    <input type="date" name="date_from" value="{{ date_from }}">
+                </div>
+                <div class="filter-group">
+                    <label>종료일</label>
+                    <input type="date" name="date_to" value="{{ date_to }}">
+                </div>
+                <div class="filter-group">
+                    <label>결과</label>
+                    <select name="result">
+                        <option value="">전체</option>
+                        <option value="granted" {% if result_filter == 'granted' %}selected{% endif %}>허용</option>
+                        <option value="denied" {% if result_filter == 'denied' %}selected{% endif %}>거부</option>
+                        <option value="error" {% if result_filter == 'error' %}selected{% endif %}>오류</option>
+                    </select>
+                </div>

@@ -3,6 +3,15 @@ from django.db import models
 from django.utils import timezone
 from django.core.validators import MinValueValidator, MaxValueValidator
 
+class ModuleInfo(models.Model):
+    """
+    아두이노 모듈 apName 저장
+    """
+    device_id = models.CharField(
+        max_length = 10,
+        verbose_name="모듈 고유 코드",
+        help_text = "아두이노 내부 Preferences->ap_name"
+    )
 
 class Room(models.Model):
     """

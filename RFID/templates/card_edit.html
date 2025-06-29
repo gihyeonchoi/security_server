@@ -1,0 +1,259 @@
+<!-- templates/card_edit.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>카드 수정 - {{ card.card_alias }}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5; 
+            color: #333;
+            padding: 20px;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        .card-form {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 { 
+            font-size: 24px; 
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #555;
+        }
+        input[type="text"], input[type="datetime-local"], select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        input[type="text"]:read-only {
+            background: #f8f9fa;
+            cursor: not-allowed;
+        }
+        textarea { resize: vertical; min-height: 80px; }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        .info-box {
+            background: #e3f2fd;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        .btn-primary:hover { background: #0056b3; }
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-secondary:hover { background: #545b62; }
+        .history-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .history-section h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+        .history-table {
+            width: 100%;
+            font-size: 14px;
+        }
+        .history-table th, .history-table td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .history-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+        .change-highlight { 
+            background: #fff3cd; 
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .messages {
+            margin-bottom: 20px;
+        }
+        .message {
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        {% if messages %}
+        <div class="messages">
+            {% for message in messages %}
+            <div class="message {{ message.tags }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <form method="post" class="card-form">
+            {% csrf_token %}
+            <h1>카드 정보 수정</h1>
+            
+            <div class="info-box">
+                <strong>카드 키:</strong> {{ card.card_key_value }}<br>
+                <strong>등록일:</strong> {{ card.regist_date|date:"Y-m-d H:i:s" }}<br>
+                <strong>등록자:</strong> {{ card.who_add }}
+            </div>
+
+            <div class="form-group">
+                <label for="card_alias">카드 별칭</label>
+                <input type="text" id="card_alias" name="card_alias" value="{{ card.card_alias }}" required>
+            </div>
+
+            <div class="form-group">
+                <label for="card_level">보안 등급</label>
+                <select id="card_level" name="card_level" required>
+                    <option value="0" {% if card.card_level == 0 %}selected{% endif %}>레벨 0 (최고 권한)</option>
+                    <option value="1" {% if card.card_level == 1 %}selected{% endif %}>레벨 1</option>
+                    <option value="2" {% if card.card_level == 2 %}selected{% endif %}>레벨 2</option>
+                    <option value="3" {% if card.card_level == 3 %}selected{% endif %}>레벨 3</option>
+                    <option value="4" {% if card.card_level == 4 %}selected{% endif %}>레벨 4</option>
+                    <option value="5" {% if card.card_level == 5 %}selected{% endif %}>레벨 5 (최저 권한)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>활성 상태</label>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="is_active" name="is_active" {% if card.is_active %}checked{% endif %}>
+                    <label for="is_active" style="font-weight: normal; margin-bottom: 0;">카드 활성화</label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="valid_from">유효 시작일</label>
+                <input type="datetime-local" id="valid_from" name="valid_from" 
+                       value="{% if card.valid_from %}{{ card.valid_from|date:'Y-m-d' }}T{{ card.valid_from|time:'H:i' }}{% endif %}">
+            </div>
+
+            <div class="form-group">
+                <label for="valid_until">유효 종료일</label>
+                <input type="datetime-local" id="valid_until" name="valid_until" 
+                       value="{% if card.valid_until %}{{ card.valid_until|date:'Y-m-d' }}T{{ card.valid_until|time:'H:i' }}{% endif %}">
+            </div>
+
+            <div class="form-group">
+                <label for="modify_reason">수정 사유</label>
+                <textarea id="modify_reason" name="modify_reason" placeholder="수정 사유를 입력하세요 (선택사항)"></textarea>
+            </div>
+
+            <div class="btn-group">
+                <button type="submit" class="btn-primary">수정 저장</button>
+                <button type="button" class="btn-secondary" onclick="window.location.href='/RFID/card_list/'">취소</button>
+            </div>
+        </form>
+
+        {% if modify_logs %}
+        <div class="history-section">
+            <h2>수정 이력 (최근 10건)</h2>
+            <table class="history-table">
+                <thead>
+                    <tr>
+                        <th>수정일시</th>
+                        <th>수정자</th>
+                        <th>별칭 변경</th>
+                        <th>등급 변경</th>
+                        <th>상태 변경</th>
+                        <th>수정 사유</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in modify_logs %}
+                    <tr>
+                        <td>{{ log.modify_date|date:"m-d H:i" }}</td>
+                        <td>{{ log.modify_who }}</td>
+                        <td>
+                            {% if log.card_alias_before != log.card_alias_after %}
+                            <span class="change-highlight">{{ log.card_alias_before }} → {{ log.card_alias_after }}</span>
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if log.card_level_before != log.card_level_after %}
+                            <span class="change-highlight">레벨{{ log.card_level_before }} → 레벨{{ log.card_level_after }}</span>
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if log.is_active_before != log.is_active_after %}
+                            <span class="change-highlight">
+                                {% if log.is_active_after %}비활성 → 활성{% else %}활성 → 비활성{% endif %}
+                            </span>
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td>{{ log.modify_reason|default:"-" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
