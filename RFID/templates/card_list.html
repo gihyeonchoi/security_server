@@ -1,0 +1,272 @@
+<!-- templates/card_list.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RFID 카드 목록</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5; 
+            color: #333;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .header { 
+            background: white; 
+            padding: 20px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .header h1 { font-size: 24px; margin-bottom: 10px; }
+        .stats { display: flex; gap: 20px; margin-top: 15px; }
+        .stat-box {
+            padding: 10px 20px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border-left: 3px solid #007bff;
+        }
+        .filters {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .filter-group { display: flex; align-items: center; gap: 8px; }
+        input[type="text"], select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover { background: #0056b3; }
+        .table-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+        tr:hover { background: #f8f9fa; }
+        .status-active { 
+            color: #28a745; 
+            font-weight: 500;
+        }
+        .status-inactive { 
+            color: #dc3545; 
+            font-weight: 500;
+        }
+        .level-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .level-0 { background: #dc3545; color: white; }
+        .level-1 { background: #fd7e14; color: white; }
+        .level-2 { background: #ffc107; color: #333; }
+        .level-3 { background: #28a745; color: white; }
+        .level-4 { background: #17a2b8; color: white; }
+        .level-5 { background: #6c757d; color: white; }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 5px;
+            margin-top: 20px;
+        }
+        .page-link {
+            padding: 8px 12px;
+            border: 1px solid #dee2e6;
+            text-decoration: none;
+            color: #007bff;
+            border-radius: 4px;
+        }
+        .page-link:hover { background: #e9ecef; }
+        .page-link.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        .actions a {
+            color: #007bff;
+            text-decoration: none;
+            margin-right: 10px;
+        }
+        .actions a:hover { text-decoration: underline; }
+        @media (max-width: 768px) {
+            .filters { flex-direction: column; align-items: stretch; }
+            .filter-group { width: 100%; }
+            .table-container { overflow-x: auto; }
+            table { min-width: 700px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>RFID 카드 목록</h1>
+            <div class="stats">
+                <div class="stat-box">
+                    <strong>전체 카드:</strong> {{ total_count }}개
+                </div>
+                <div class="stat-box">
+                    <strong>활성 카드:</strong> {{ active_count }}개
+                </div>
+            </div>
+        </div>
+
+        <form method="get" class="filters">
+            <div class="filter-group">
+                <label>검색:</label>
+                <input type="text" name="search" value="{{ search }}" placeholder="카드키, 별칭, 등록자">
+            </div>
+            <div class="filter-group">
+                <label>상태:</label>
+                <select name="active">
+                    <option value="">전체</option>
+                    <option value="true" {% if filter_active == 'true' %}selected{% endif %}>활성</option>
+                    <option value="false" {% if filter_active == 'false' %}selected{% endif %}>비활성</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>등급:</label>
+                <select name="level">
+                    <option value="">전체</option>
+                    {% for i in "012345" %}
+                    <option value="{{ i }}" {% if filter_level == i %}selected{% endif %}>레벨 {{ i }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>정렬:</label>
+                <select name="sort">
+                    <option value="-regist_date" {% if sort_by == '-regist_date' %}selected{% endif %}>최신 등록순</option>
+                    <option value="regist_date" {% if sort_by == 'regist_date' %}selected{% endif %}>오래된 순</option>
+                    <option value="card_alias" {% if sort_by == 'card_alias' %}selected{% endif %}>별칭순</option>
+                    <option value="card_level" {% if sort_by == 'card_level' %}selected{% endif %}>등급순</option>
+                </select>
+            </div>
+            <button type="submit">검색</button>
+            <button type="button" onclick="window.location.href='?'">초기화</button>
+        </form>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>카드 키</th>
+                        <th>별칭</th>
+                        <th>등급</th>
+                        <th>상태</th>
+                        <th>유효성</th>
+                        <th>등록일</th>
+                        <th>등록자</th>
+                        <th>최근 사용</th>
+                        <th>사용 횟수</th>
+                        <th>관리</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for card in cards %}
+                    <tr>
+                        <td><code>{{ card.card_key_value }}</code></td>
+                        <td>{{ card.card_alias }}</td>
+                        <td><span class="level-badge level-{{ card.card_level }}">레벨 {{ card.card_level }}</span></td>
+                        <td>
+                            {% if card.is_active %}
+                                <span class="status-active">활성</span>
+                            {% else %}
+                                <span class="status-inactive">비활성</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ card.validity_status }}</td>
+                        <td>{{ card.regist_date|date:"Y-m-d H:i" }}</td>
+                        <td>{{ card.who_add }}</td>
+                        <td>
+                            {% if card.last_use_date %}
+                                {{ card.last_use_date|date:"m-d H:i" }}
+                                ({{ card.last_use_result }})
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>{{ card.use_count }}회</td>
+                        <td class="actions">
+                            <a href="/RFID/card_edit/{{ card.id }}/">수정</a>
+                            <a href="#" onclick="viewLogs({{card.id}})">로그</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="10" style="text-align: center; padding: 40px;">
+                            검색 결과가 없습니다.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if cards.has_other_pages %}
+        <div class="pagination">
+            {% if cards.has_previous %}
+                <a href="?page={{ cards.previous_page_number }}&search={{ search }}&active={{ filter_active }}&level={{ filter_level }}&sort={{ sort_by }}" class="page-link">이전</a>
+            {% endif %}
+            
+            {% for num in cards.paginator.page_range %}
+                {% if cards.number == num %}
+                    <span class="page-link active">{{ num }}</span>
+                {% elif num > cards.number|add:'-3' and num < cards.number|add:'3' %}
+                    <a href="?page={{ num }}&search={{ search }}&active={{ filter_active }}&level={{ filter_level }}&sort={{ sort_by }}" class="page-link">{{ num }}</a>
+                {% endif %}
+            {% endfor %}
+            
+            {% if cards.has_next %}
+                <a href="?page={{ cards.next_page_number }}&search={{ search }}&active={{ filter_active }}&level={{ filter_level }}&sort={{ sort_by }}" class="page-link">다음</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        function viewLogs(cardId) {
+            // 카드 사용 로그 팝업 또는 새 창으로 표시
+            window.open(`/RFID/card_logs/${cardId}/`, 'logs', 'width=1000,height=700');
+        }
+        
+        // 자동 새로고침 (옵션)
+        // setInterval(() => location.reload(), 30000); // 30초마다 새로고침
+    </script>
+</body>
+</html>

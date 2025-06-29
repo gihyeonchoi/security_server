@@ -14,6 +14,7 @@ from django.db import transaction
 # from RFID.models import Card
 from django.apps import apps
 Card = apps.get_model('RFID', 'Card')
+Room = apps.get_model('RFID', 'Room')
 
 rfid_records = []   # RFID 카드 데이터 저장용
 
@@ -28,6 +29,11 @@ def card_tag(request):
         try:
             data = json.loads(request.body)
             rfid_code = data.get('rfid_code')
+
+            # 방 열때 사용. 새로 함수 만들어야함
+            post_device_id = data.get('device_id')
+            match_device = Card.objects.filter(device_id=post_device_id)
+
             if rfid_code:
                 page_id = str(uuid.uuid4())     # 새 페이지 이름으로 랜덤값 생성
                 current_time = timezone.now()   # 보내진 시간 측정
@@ -50,11 +56,11 @@ def card_tag(request):
                     })
 
         except json.JSONDecodeError as e:
-            return JsonResponse({'status': 'error', 'message': '잘못된 데이터 형식'})
+            return JsonResponse({'status': 'error', 'message': 'WRONG DATA TYPE'})
         except Exception as e:
             return JsonResponse({'status': 'error', 'message': str(e)})
 
-    return JsonResponse({'status': 'error', 'message': '잘못된 요청 메소드'})
+    return JsonResponse({'status': 'error', 'message': 'WRONG DATA'})
 
 def clean_old_records_30min():
     """30분이 지난 레코드를 실제로 삭제하는 함수"""
