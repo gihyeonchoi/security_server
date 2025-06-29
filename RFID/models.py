@@ -13,6 +13,11 @@ class ModuleInfo(models.Model):
         help_text = "아두이노 내부 Preferences->ap_name"
     )
 
+    class Meta:
+        db_table = 'module_info'
+        verbose_name = "아두이노 정보 저장"
+        verbose_name_plural = "ModuleInfo : 아두이노 디바이스 정보"
+
 class Room(models.Model):
     """
     방/출입지점 정보 테이블

@@ -1,0 +1,405 @@
+<!-- templates/room_add.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>방 등록</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5; 
+            color: #333;
+            padding: 20px;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 { font-size: 24px; margin-bottom: 10px; }
+        .info-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .info-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .info-card-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #007bff;
+            margin-bottom: 5px;
+        }
+        .info-card-label {
+            color: #666;
+            font-size: 14px;
+        }
+        .form-container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #555;
+        }
+        input[type="text"], select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .help-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        .device-check {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .device-check input {
+            flex: 1;
+        }
+        .check-btn {
+            padding: 10px 15px;
+            background: #17a2b8;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .check-btn:hover { background: #138496; }
+        .status-message {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            display: none;
+        }
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status-warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        .module-selection {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .module-selection h4 {
+            margin-bottom: 15px;
+            color: #333;
+            font-size: 16px;
+        }
+        .module-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        .module-card {
+            padding: 15px;
+            background: white;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            text-align: center;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .module-card.available:hover {
+            border-color: #007bff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .module-card.available.selected {
+            border-color: #007bff;
+            background: #e7f3ff;
+        }
+        .module-card.used {
+            background: #f8f9fa;
+            border-color: #adb5bd;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+        .module-id {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        .module-status {
+            font-size: 14px;
+        }
+        .status-text {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status-text.available {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-text.used {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .room-info {
+            display: block;
+            margin-top: 5px;
+            font-size: 12px;
+            color: #666;
+        }
+        .empty-modules {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        .btn-primary:hover { background: #0056b3; }
+        .btn-primary:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-secondary:hover { background: #545b62; }
+        .messages {
+            margin-bottom: 20px;
+        }
+        .message {
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        {% if messages %}
+        <div class="messages">
+            {% for message in messages %}
+            <div class="message {{ message.tags }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="header">
+            <h1>새 방 등록</h1>
+            <p style="color: #666; margin-top: 5px;">ModuleInfo에 등록된 아두이노 기기만 사용할 수 있습니다.</p>
+        </div>
+
+        <div class="info-cards">
+            <div class="info-card">
+                <div class="info-card-value">{{ total_modules }}</div>
+                <div class="info-card-label">전체 모듈</div>
+            </div>
+            <div class="info-card">
+                <div class="info-card-value">{{ used_modules }}</div>
+                <div class="info-card-label">사용 중</div>
+            </div>
+            <div class="info-card">
+                <div class="info-card-value">{{ available_count }}</div>
+                <div class="info-card-label">사용 가능</div>
+            </div>
+        </div>
+
+        <form method="post" class="form-container" id="roomForm">
+            {% csrf_token %}
+            
+            <div class="form-group">
+                <label for="name">방 이름 *</label>
+                <input type="text" id="name" name="name" required placeholder="예: 회의실A, 서버실">
+                <div class="help-text">방을 구분할 수 있는 명확한 이름을 입력하세요.</div>
+            </div>
+
+            <div class="form-group">
+                <label for="location">방 위치 *</label>
+                <input type="text" id="location" name="location" required placeholder="예: 3층 동쪽, B동 301호">
+                <div class="help-text">방의 물리적 위치를 상세히 입력하세요.</div>
+            </div>
+
+            <div class="form-group">
+                <label for="device_id">아두이노 기기 ID *</label>
+                <input type="text" id="device_id" name="device_id" required readonly placeholder="아래 목록에서 선택하세요">
+                <div id="statusMessage" class="status-message"></div>
+                
+                <div class="module-selection">
+                    <h4>사용 가능한 모듈 선택:</h4>
+                    <div class="module-grid">
+                        {% for module in modules_with_status %}
+                        <div class="module-card {% if module.is_used %}used{% else %}available{% endif %}" 
+                             {% if not module.is_used %}onclick="selectModule('{{ module.device_id }}')"{% endif %}>
+                            <div class="module-id">{{ module.device_id }}</div>
+                            <div class="module-status">
+                                {% if module.is_used %}
+                                    <span class="status-text used">사용 중</span>
+                                    <span class="room-info">{{ module.room.name }}</span>
+                                {% else %}
+                                    <span class="status-text available">사용 가능</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="empty-modules">
+                            등록된 모듈이 없습니다. 먼저 모듈을 등록해주세요.
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="required_level">필요 보안 등급 *</label>
+                <select id="required_level" name="required_level" required>
+                    <option value="0">레벨 0 (최고 권한 필요)</option>
+                    <option value="1">레벨 1</option>
+                    <option value="2">레벨 2</option>
+                    <option value="3" selected>레벨 3</option>
+                    <option value="4">레벨 4</option>
+                    <option value="5">레벨 5 (최저 권한)</option>
+                </select>
+                <div class="help-text">이 등급 이하의 카드만 출입 가능합니다.</div>
+            </div>
+
+            <div class="form-group">
+                <label>활성 상태</label>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="is_enabled" name="is_enabled" checked>
+                    <label for="is_enabled" style="font-weight: normal; margin-bottom: 0;">방 사용 가능</label>
+                </div>
+                <div class="help-text">체크 해제 시 모든 출입이 차단됩니다.</div>
+            </div>
+
+            <div class="btn-group">
+                <button type="submit" class="btn-primary" id="submitBtn" disabled>등록하기</button>
+                <button type="button" class="btn-secondary" onclick="window.location.href='/RFID/room_list/'">취소</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        let selectedModule = null;
+
+        function selectModule(deviceId) {
+            // 이전 선택 해제
+            document.querySelectorAll('.module-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            
+            // 새로운 선택
+            const clickedCard = event.currentTarget;
+            clickedCard.classList.add('selected');
+            
+            // input에 값 설정
+            document.getElementById('device_id').value = deviceId;
+            selectedModule = deviceId;
+            
+            // 상태 메시지 표시
+            showStatus('success', '모듈이 선택되었습니다.');
+            
+            // 제출 버튼 활성화
+            document.getElementById('submitBtn').disabled = false;
+        }
+
+        function showStatus(type, message) {
+            const statusMessage = document.getElementById('statusMessage');
+            statusMessage.className = 'status-message status-' + type;
+            statusMessage.textContent = message;
+            statusMessage.style.display = 'block';
+        }
+
+        // 폼 제출 전 확인
+        document.getElementById('roomForm').onsubmit = function(e) {
+            if (!selectedModule) {
+                e.preventDefault();
+                alert('아두이노 모듈을 선택해주세요.');
+                return false;
+            }
+            
+            // 선택한 모듈이 여전히 사용 가능한지 최종 확인
+            const selectedCard = document.querySelector('.module-card.selected');
+            if (!selectedCard || selectedCard.classList.contains('used')) {
+                e.preventDefault();
+                alert('선택한 모듈을 사용할 수 없습니다.');
+                return false;
+            }
+        };
+
+        // 페이지 로드 시 제출 버튼 비활성화
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('submitBtn').disabled = true;
+        });
+    </script>
+</body>
+</html>
