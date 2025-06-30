@@ -15,24 +15,128 @@ from django.db import transaction
 from django.apps import apps
 Card = apps.get_model('RFID', 'Card')
 Room = apps.get_model('RFID', 'Room')
+CardUseLog = apps.get_model('RFID', 'CardUseLog')
 
 rfid_records = []   # RFID 카드 데이터 저장용
 
-def use_card(request):
+@csrf_exempt
+def card_use(request):
     """ 카드로 문 열때 인증 관리 """
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
             rfid_code = data.get('rfid_code')
-            post_device_id = data.get('device_id')
-            match_device = Card.objects.filter(device_id=post_device_id)
+            device_code = data.get('device_code')  # device_id가 아닌 device_code로 수정
             
+            # 필수 데이터 확인
+            if not rfid_code or not device_code:
+                return JsonResponse({
+                    'status': 'error', 
+                    'message': '필수 데이터 누락',
+                    'detail': 'rfid_code와 device_code가 필요합니다.'
+                })
+            
+            # 1. device_code로 Room 조회
+            try:
+                room = Room.objects.get(device_id=device_code, is_enabled=True)
+            except Room.DoesNotExist:
+                # Room이 없거나 비활성화된 경우
+                return JsonResponse({
+                    'status': 'error',
+                    'message': '사용불가',
+                    'detail': f'기기 ID {device_code}에 해당하는 활성화된 방이 없습니다.',
+                    'access_result': 'denied'
+                })
+            
+            # 2. rfid_code로 Card 조회
+            try:
+                card = Card.objects.get(card_key_value=rfid_code, is_active=True)
+            except Card.DoesNotExist:
+                # 카드가 없거나 비활성화된 경우
+                return JsonResponse({
+                    'status': 'error',
+                    'message': '미등록 카드',
+                    'detail': f'등록되지 않았거나 비활성화된 카드입니다.',
+                    'access_result': 'denied'
+                })
+            
+            # 3. 카드 유효성 검사
+            if not card.is_valid():
+                return JsonResponse({
+                    'status': 'error',
+                    'message': '유효하지 않은 카드',
+                    'detail': '카드 유효기간이 만료되었습니다.',
+                    'access_result': 'denied'
+                })
+            
+            # 4. 보안 등급 확인 (카드 레벨 <= 방 요구 레벨)
+            if card.card_level <= room.required_level:
+                # 출입 허용
+                access_result = 'granted'
+                message = '출입 허용'
+                detail = f'{card.card_alias}님, {room.name} 출입이 허용되었습니다.'
+                denial_reason = ''  # 빈 문자열로 설정
+                
+                # 문 열림 상태 업데이트
+                room.door_status = True
+                room.last_door_change = timezone.now()
+                room.save()
+                
+            else:
+                # 보안 등급 부족
+                access_result = 'denied'
+                message = '보안등급 부족'
+                detail = f'카드 레벨({card.card_level})이 방 요구 레벨({room.required_level})보다 높습니다.'
+                denial_reason = '보안등급 부족'
+            
+            # 5. 사용 로그 기록
+            CardUseLog.objects.create(
+                card=card,
+                room=room,
+                card_key_backup=rfid_code,
+                room_name_backup=room.name,
+                access_result=access_result,
+                denial_reason=denial_reason,  # 항상 문자열 값을 가짐
+                server_response_time=0  # 실제 응답시간 측정 시 업데이트
+            )
+            
+            # 6. 응답 반환
+            response_data = {
+                'status': 'success' if access_result == 'granted' else 'error',
+                'message': message,
+                'detail': detail,
+                'access_result': access_result,
+                'data': {
+                    'card_alias': card.card_alias,
+                    'card_level': card.card_level,
+                    'room_name': room.name,
+                    'room_required_level': room.required_level,
+                    'timestamp': timezone.now().isoformat()
+                }
+            }
+            
+            return JsonResponse(response_data)
 
         except json.JSONDecodeError as e:
-            return JsonResponse({'status': 'error', 'message': 'WRONG DATA TYPE'})
+            return JsonResponse({
+                'status': 'error', 
+                'message': 'WRONG DATA TYPE',
+                'detail': '올바른 JSON 형식이 아닙니다.'
+            })
         except Exception as e:
-            return JsonResponse({'status': 'error', 'message': str(e)})
-    return JsonResponse({'status': 'error', 'message': 'WRONG DATA'})   
+            # 예상치 못한 오류
+            return JsonResponse({
+                'status': 'error', 
+                'message': '서버 오류',
+                'detail': str(e)
+            })
+    
+    # POST가 아닌 경우
+    return JsonResponse({
+        'status': 'error', 
+        'message': 'WRONG METHOD',
+        'detail': 'POST 메서드만 허용됩니다.'
+    })
 
 @csrf_exempt
 def card_tag(request):

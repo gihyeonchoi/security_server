@@ -28,6 +28,9 @@ urlpatterns = [
     path('card_list/', card_list.card_list, name='card_list'),
     path('api/cards/', card_list.card_list_api, name='card_list_api'),
 
+    # RFID 실제 방에 사용 관련
+    path('card_use/', views2.card_use, name='card_use'),
+
 
     # RFID 카드 수정 페이지 (관리자 전용)
     path('card_edit/<int:card_id>/', card_modify.card_edit, name='card_edit'),
