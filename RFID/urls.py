@@ -39,6 +39,7 @@ urlpatterns = [
     path('room_list/', views_room.room_list, name='room_list'),
     path('room_add/', views_room.room_add, name='room_add'),
     path('room_edit/<int:room_id>/', views_room.room_edit, name='room_edit'),
+    path('room_delete/<int:room_id>/', views_room.room_delete, name='room_delete'),
     
     # Module 관리
     path('module_list/', views_room.module_list, name='module_list'),

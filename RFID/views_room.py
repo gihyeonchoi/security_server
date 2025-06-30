@@ -143,6 +143,50 @@ def room_edit(request, room_id):
     }
     return render(request, 'room_edit.html', context)
 
+@login_required
+def room_delete(request, room_id):
+    """Room 삭제"""
+    if not request.user.is_superuser:
+        messages.error(request, "접근 권한이 없습니다.")
+        return redirect('room_list')
+    
+    room = get_object_or_404(Room, id=room_id)
+    
+    if request.method == 'POST':
+        try:
+            # 삭제 전 정보 저장
+            room_name = room.name
+            device_id = room.device_id
+            
+            # 관련 로그 수 확인
+            access_logs_count = room.access_logs.count()
+            # door_logs_count = room.door_logs.count()
+            
+            # 삭제 확인
+            if request.POST.get('confirm_delete') == 'yes':
+                # Room 삭제 (CASCADE로 door_logs는 자동 삭제)
+                # access_logs는 SET_NULL로 유지됨
+                room.delete()
+                
+                messages.success(request, f"방 '{room_name}'이(가) 삭제되었습니다. (기기 ID: {device_id})")
+                return redirect('room_list')
+            else:
+                messages.error(request, "삭제가 취소되었습니다.")
+                return redirect('room_edit', room_id=room_id)
+                
+        except Exception as e:
+            messages.error(request, f"삭제 중 오류 발생: {str(e)}")
+            return redirect('room_edit', room_id=room_id)
+    
+    # GET 요청 시 확인 페이지 표시
+    context = {
+        'room': room,
+        'access_logs_count': room.access_logs.count(),
+        # 'door_logs_count': room.door_logs.count(),
+        'recent_access': room.access_logs.order_by('-use_date').first(),
+    }
+    return render(request, 'room_delete_confirm.html', context)
+
 
 @login_required
 def module_list(request):
