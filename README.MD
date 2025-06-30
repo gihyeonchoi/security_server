@@ -1,4 +1,4 @@
 recommand : python 3.9
 
 
-pip install django
+pip install django requests
