@@ -122,6 +122,7 @@
         }
         .btn-export:hover { background: #218838; }
         .logs-table {
+            margin-bottom: 15px;
             background: white;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -231,6 +232,26 @@
         </form>
 
         <div class="logs-table">
+            <div class="stats-grid">
+            <div class="stat-card">
+                <div class="info-item">
+                    <span class="info-label">카드 키</span>
+                    <span class="info-value">{{ card.card_key_value }}</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="info-item">
+                    <span class="info-label">보안 등급</span>
+                    <span class="info-value">레벨 {{ card.card_level }}</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="info-item">
+                    <span class="info-label">상태</span>
+                    <span class="info-value">{% if card.is_active %}활성{% else %}비활성{% endif %}</span>
+                </div>
+            </div>
+        </div>
             <table>
                 <thead>
                     <tr>
@@ -291,6 +312,24 @@
         </div>
         {% endif %}
     </div>
+    
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ total_logs }}</div>
+            <div class="stat-label">전체 사용</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value stat-granted">{{ granted_count }}</div>
+            <div class="stat-label">허용</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value stat-denied">{{ denied_count }}</div>
+            <div class="stat-label">거부</div>
+        </div>
+    </div>
+    </div>
+    
 
     <script>
         // 날짜 입력 시 오늘 날짜를 최대값으로 설정
@@ -301,35 +340,8 @@
         });
     </script>
 </body>
-</html><div class="info-item">
-                    <span class="info-label">카드 키</span>
-                    <span class="info-value">{{ card.card_key_value }}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">보안 등급</span>
-                    <span class="info-value">레벨 {{ card.card_level }}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">상태</span>
-                    <span class="info-value">{% if card.is_active %}활성{% else %}비활성{% endif %}</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-value">{{ total_logs }}</div>
-                <div class="stat-label">전체 사용</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value stat-granted">{{ granted_count }}</div>
-                <div class="stat-label">허용</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value stat-denied">{{ denied_count }}</div>
-                <div class="stat-label">거부</div>
-            </div>
-            <div class="stat-card">
+</html>
+            <!-- <div class="stat-card">
                 <div class="stat-value">
                     {% if total_logs > 0 %}
                         {{ granted_count|floatformat:0 }}%
@@ -371,4 +383,4 @@
                         <option value="denied" {% if result_filter == 'denied' %}selected{% endif %}>거부</option>
                         <option value="error" {% if result_filter == 'error' %}selected{% endif %}>오류</option>
                     </select>
-                </div>
+                </div> -->
