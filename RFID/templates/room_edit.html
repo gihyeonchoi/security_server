@@ -148,6 +148,15 @@
             background: #dc3545;
             color: white;
         }
+        .btn-info {
+            background: #17a2b8;
+            color: white;
+        }
+        .btn-info:hover { background: #138496; }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
         .btn-danger:hover { background: #c82333; }
         .messages {
             margin-bottom: 20px;
@@ -284,7 +293,8 @@
             <div class="btn-group">
                 <button type="submit" class="btn-primary">수정 저장</button>
                 <button type="button" class="btn-secondary" onclick="window.location.href='/RFID/room_list/'">취소</button>
-                <button type="button" class="btn-danger" onclick="viewDoorLogs()">문 상태 로그</button>
+                <button type="button" class="btn-info" onclick="viewDoorLogs()">문 상태 로그</button>
+                <button type="button" class="btn-danger" onclick="deleteRoom()">방 삭제</button>
             </div>
         </form>
     </div>
@@ -292,6 +302,12 @@
     <script>
         function viewDoorLogs() {
             window.open(`/RFID/room_door_logs/{{ room.id }}/`, 'door_logs', 'width=1000,height=700');
+        }
+
+        function deleteRoom() {
+            if (confirm('방 삭제 페이지로 이동하시겠습니까?')) {
+                window.location.href = `/RFID/room_delete/{{ room.id }}/`;
+            }
         }
 
         // 폼 제출 전 확인
