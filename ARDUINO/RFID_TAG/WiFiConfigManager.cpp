@@ -373,7 +373,7 @@ void WiFiConfigManager::handleConnect() {
         
         delay(3000);
         WiFi.mode(WIFI_STA);
-        digitalWrite(ledPin, HIGH);
+        digitalWrite(ledPin, LOW);
         
         if(_onConnectedCallback) {
             _onConnectedCallback(WiFi.localIP().toString());
