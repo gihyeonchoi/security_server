@@ -8,7 +8,7 @@ from . import card_log
 from . import views_room
 
 urlpatterns = [
-    path('', views.tag_test, name='tag_test'),
+    path('', views2.main_page, name='main_page'),
     path('check_tag/', views.check_tag, name='check_tag'),
     # path('card_add/<str:page_id>/', views.card_add, name='card_add'),
     
