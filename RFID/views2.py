@@ -1,4 +1,5 @@
 from django.contrib.auth.views import login_required
+# from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import render, redirect
 from django.http import HttpResponse, JsonResponse
@@ -18,6 +19,28 @@ Room = apps.get_model('RFID', 'Room')
 CardUseLog = apps.get_model('RFID', 'CardUseLog')
 
 rfid_records = []   # RFID 카드 데이터 저장용
+
+@login_required
+def main_page(request):
+    """RFID 시스템 메인 페이지"""
+    # 통계 데이터 계산
+    room_count = Room.objects.filter(is_enabled=True).count()
+    card_count = Card.objects.filter(is_active=True).count()
+    
+    # 오늘 출입 기록
+    today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_access = CardUseLog.objects.filter(
+        use_date__gte=today_start,
+        access_result='granted'
+    ).count()
+    
+    context = {
+        'user': request.user,
+        'room_count': room_count,
+        'card_count': card_count,
+        'today_access': today_access,
+    }
+    return render(request, 'main.html', context)
 
 @csrf_exempt
 def card_use(request):

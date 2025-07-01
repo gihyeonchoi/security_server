@@ -1,0 +1,154 @@
+<!-- templates/main.html -->
+{% extends 'base.html' %}
+
+{% block title %}메인 - RFID 출입 통제 시스템{% endblock %}
+
+{% block extra_css %}
+<style>
+    .hero {
+        background: white;
+        padding: 40px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        text-align: center;
+        margin-bottom: 40px;
+    }
+    .hero h1 {
+        font-size: 32px;
+        margin-bottom: 15px;
+        color: #2c3e50;
+    }
+    .hero p {
+        font-size: 18px;
+        color: #666;
+        margin-bottom: 30px;
+    }
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+        margin-bottom: 40px;
+    }
+    .stat-card {
+        background: white;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        text-align: center;
+        transition: transform 0.3s;
+    }
+    .stat-card:hover {
+        transform: translateY(-5px);
+    }
+    .stat-icon {
+        font-size: 48px;
+        margin-bottom: 15px;
+    }
+    .stat-value {
+        font-size: 36px;
+        font-weight: bold;
+        color: #2c3e50;
+        margin-bottom: 5px;
+    }
+    .stat-label {
+        color: #666;
+        font-size: 16px;
+    }
+    .quick-links {
+        background: white;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .quick-links h2 {
+        font-size: 24px;
+        margin-bottom: 20px;
+        color: #2c3e50;
+    }
+    .link-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+    }
+    .quick-link {
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 8px;
+        text-decoration: none;
+        color: #333;
+        transition: all 0.3s;
+        border: 2px solid transparent;
+    }
+    .quick-link:hover {
+        background: #e9ecef;
+        border-color: #007bff;
+        transform: translateY(-2px);
+    }
+    .quick-link-title {
+        font-weight: 600;
+        margin-bottom: 5px;
+    }
+    .quick-link-desc {
+        font-size: 14px;
+        color: #666;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+    <div class="hero">
+        <h1>폴리텍 출입 통제 시스템</h1>
+        <p>한국 폴리텍 대학 춘천캠퍼스 보안 시스템</p>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon">🏢</div>
+            <div class="stat-value" id="roomCount">{{ room_count|default:"0" }}</div>
+            <div class="stat-label">등록된 방</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">💳</div>
+            <div class="stat-value" id="cardCount">{{ card_count|default:"0" }}</div>
+            <div class="stat-label">활성 카드</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">📊</div>
+            <div class="stat-value" id="todayAccess">{{ today_access|default:"0" }}</div>
+            <div class="stat-label">오늘 출입</div>
+        </div>
+    </div>
+
+    <div class="quick-links">
+        <h2>빠른 메뉴</h2>
+        <div class="link-grid">
+            <a href="/RFID/view_tag/" class="quick-link">
+                <div class="quick-link-title">📋 카드 확인</div>
+                <div class="quick-link-desc">실시간 RFID 태그 확인</div>
+            </a>
+            <a href="/RFID/card_list/" class="quick-link">
+                <div class="quick-link-title">💳 카드 관리</div>
+                <div class="quick-link-desc">카드 조회 및 수정</div>
+            </a>
+            <a href="/RFID/room_list/" class="quick-link">
+                <div class="quick-link-title">🚪 방 관리</div>
+                <div class="quick-link-desc">방 정보 조회 및 설정</div>
+            </a>
+            <a href="/RFID/module_list/" class="quick-link">
+                <div class="quick-link-title">📟 모듈 관리</div>
+                <div class="quick-link-desc">아두이노 모듈 등록</div>
+            </a>
+            <a href="/admin/" class="quick-link">
+                <div class="quick-link-title">⚙️ 관리자</div>
+                <div class="quick-link-desc">Django 관리자 페이지</div>
+            </a>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // 메인 페이지 전용 JavaScript
+    console.log("메인 페이지 로드됨");
+</script>
+{% endblock %}
