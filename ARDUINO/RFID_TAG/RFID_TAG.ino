@@ -20,12 +20,20 @@ RST     : IO 13
 #include "WiFiConfigManager.h"
 // #include "WiFiConfigManager.cpp"
 
+#include <Arduino.h>
+
 
 #define SS_PIN 5
 #define RST_PIN 13
 
 // 도어센서 핀 설정
 #define DOOR_SENSOR_PIN 27
+
+// 안쪽 문열림 핀 설정
+#define DOOR_OPEN_SWITCH 26
+
+// 솔레노이드 스위치 설정
+#define SOLENOID_LOCK 25
 
 // LED핀 설정 -> 기본 내장 파랑 LED인 2번 사용
 #define LED_PIN 2
@@ -63,6 +71,12 @@ void setup() {
   // 도어센서 pin 연결
   pinMode(DOOR_SENSOR_PIN, INPUT_PULLUP);
 
+  // 문열림 스위치 pin 연결
+  pinMode(DOOR_OPEN_SWITCH, INPUT_PULLUP);
+
+  // 솔레노이드 잠금장치 pin 연결
+  pinMode(SOLENOID_LOCK, OUTPUT);
+
   // WiFi 매니저 연결 
   wifiManager.onWiFiConnected(onWiFiConnected);
   wifiManager.onWiFiDisconnected(onWiFiDisconnected);
@@ -82,28 +96,82 @@ void setup() {
   }
 }
 
+// 도어 센서
 int SENSOR_STATE = 0;
+
+// 문 열림 스위치
+int SWITCH_STATE = 0; // sw 입력값 read
+int buttonState;
+int lastButtonState = LOW;
+unsigned long buttonPressTime = 0;  // 버튼 누른시간 체크
+unsigned long lastDebounceTime = 0;
+int debounceDelay=100;
+int debounceDelay_For_Init_Setting = 5000;  // 세팅 초기화
+
+// 문 열림/닫힘 확인용
+bool isDoorOpen = false;
+
+// 솔레노이드 잠금장치 자동 잠금
+int autoLockTime = 2000;
+unsigned long doorOpenTime = 0;
 
 void loop() {
   wifiManager.handle();
   if(wifiManager.isConnected()) {
     // WiFi 연결됨 - 정상 작업 수행
-    static unsigned long lastAction = 0;
+    static unsigned long lastTAG = 0;   // 태그 한번만 되게
+    // static unsigned long swChattering = 0;   // 스위치 채터링
     // Serial.println(millis());
     // Serial.println(lastAction);
     // Serial.println("--------------------------------");
-    if(millis() - lastAction > 1000) { // 1초마다
-      // ====================== 도어센서 체크 =========================
-      SENSOR_STATE = digitalRead(DOOR_SENSOR_PIN);
-      Serial.print("센서 상태 : ");
-      Serial.println(SENSOR_STATE);
-      if(SENSOR_STATE == HIGH) {
-        Serial.println("열림");
-      }
-      // ====================== 중간 내용 =============================
-      // 너무 자주 실행되지 않게끔
-      delay(500);
 
+    // ====================== 자동 문잠김 ======================
+    if(!isDoorOpen && ((millis() - doorOpenTime) > autoLockTime)){
+      digitalWrite(SOLENOID_LOCK, HIGH);
+    }
+    // ====================== 스위치 동작 체크 ======================
+    SWITCH_STATE = digitalRead(DOOR_OPEN_SWITCH);
+
+    if (SWITCH_STATE != lastButtonState){
+      lastDebounceTime = millis();
+    }
+    
+    if ((millis() - lastDebounceTime) > debounceDelay) {
+      if (SWITCH_STATE != buttonState) {
+        buttonState = SWITCH_STATE;
+        if (buttonState == LOW) {
+          buttonPressTime = millis();
+        } else {
+          unsigned long pressDuration = millis() - buttonPressTime;
+          if (pressDuration >= debounceDelay_For_Init_Setting) {
+            Serial.println("길게누름 : 초기화함");
+            // 초기화 모드 실행
+          } else {
+            Serial.println("짧게누름 : 문열림");
+            digitalWrite(SOLENOID_LOCK, LOW);
+          }
+        }
+      }
+    }
+    lastButtonState = SWITCH_STATE;
+
+    // ====================== 도어센서 체크 =========================
+    SENSOR_STATE = digitalRead(DOOR_SENSOR_PIN);
+    Serial.print("센서 상태 : ");
+    Serial.println(SENSOR_STATE);
+    if(SENSOR_STATE == HIGH) {
+      isDoorOpen = true;
+      doorOpenTime = millis();
+      Serial.println("열림");
+      // 근데 생각해봤는데 문이 열리는 시나리오도 작성해야하나? 문이 안 닫혀있을 경우??
+    } else {
+      isDoorOpen = false;
+    }
+
+
+    // ====================== 중간 내용 =============================
+    
+    if(millis() - lastTAG > 1000) { // 1초마다
       // ====================== RFID 태그 체크 =========================
       // 모듈 근처에 카드가 붙었는지 체크
       if (!rfid.PICC_IsNewCardPresent())
@@ -160,6 +228,7 @@ void loop() {
         const char* status = doc["status"];
         if (strcmp(status, "success") == 0) {
           Serial.println("출입 허용");
+          digitalWrite(SOLENOID_LOCK, LOW);
           digitalWrite(LED_PIN, HIGH);
           delay(2000);
           digitalWrite(LED_PIN, LOW);
@@ -181,8 +250,11 @@ void loop() {
       // Stop encryption on PCD
       rfid.PCD_StopCrypto1();
 
-      lastAction = millis();
+      lastTAG = millis();
     }
+    // 너무 자주 실행되지 않게끔
+    delay(500);
+
   } else if(wifiManager.isInConfigMode()) {
     // 설정 모드 - 사용자가 WiFi 설정 중
     static unsigned long lastConfigMsg = 0;
@@ -195,9 +267,6 @@ void loop() {
   if (WiFi.status() != WL_CONNECTED) {
     return;
   }
-
-  // 너무 자주 실행되지 않게끔
-  delay(400);
 }
 
 
