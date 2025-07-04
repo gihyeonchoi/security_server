@@ -6,6 +6,7 @@ from . import card_list
 from . import card_modify
 from . import card_log
 from . import views_room
+from . import door_status
 
 urlpatterns = [
     path('', views2.main_page, name='main_page'),
@@ -47,6 +48,11 @@ urlpatterns = [
     # Module 관리
     path('module_list/', views_room.module_list, name='module_list'),
     
+    # Door Status 관리 (새로 추가)
+    path('door_status_update/', door_status.door_status_update, name='door_status_update'),
+    path('door_status_get/', door_status.door_status_get, name='door_status_get'),
+    path('door_status_monitor/', door_status.door_status_monitor, name='door_status_monitor'),
+
     # Ajax
     path('check_device_availability/', views_room.check_device_availability, name='check_device_availability'),
 ]  
