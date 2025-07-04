@@ -32,14 +32,16 @@ RST     : IO 13
 // 안쪽 문열림 핀 설정
 #define DOOR_OPEN_SWITCH 26
 
-// 솔레노이드 스위치 설정
+// 솔레노이드 락 핀 설정
 #define SOLENOID_LOCK 25
 
 // LED핀 설정 -> 기본 내장 파랑 LED인 2번 사용
 #define LED_PIN 2
 
 // #define ServerURL "http://chlrlgus.iptime.org:8000/RFID/test/"
-#define ServerURL "http://127.0.0.1:8000/RFID/test/"
+#define ServerURL "http://chlrlgus.iptime.org:8000/RFID/test/"
+// 문 상태 업데이트 URL 추가
+#define DoorStatusURL "http://chlrlgus.iptime.org:8000/RFID/door_status_update/"
 
 MFRC522 rfid(SS_PIN, RST_PIN); // Instance of the class
 
@@ -96,8 +98,12 @@ void setup() {
   }
 }
 
+// 없으면 처음 실행마다 계속 초기화됨
+bool isFirstStart = true;
+
 // 도어 센서
 int SENSOR_STATE = 0;
+int LAST_SENSOR_STATE = 0;  // 이전 센서 상태 저장
 
 // 문 열림 스위치
 int SWITCH_STATE = 0; // sw 입력값 read
@@ -110,10 +116,16 @@ int debounceDelay_For_Init_Setting = 5000;  // 세팅 초기화
 
 // 문 열림/닫힘 확인용
 bool isDoorOpen = false;
+bool autoLockDone = false;  // 자동 잠금 동작 완료 여부
+bool lastDoorOpenState = false;  // 이전 문 열림 상태 저장
 
 // 솔레노이드 잠금장치 자동 잠금
 int autoLockTime = 2000;
 unsigned long doorOpenTime = 0;
+
+// 마지막 문 상태 업데이트 시간 (너무 자주 전송하지 않게 제한)
+unsigned long lastDoorStatusUpdate = 0;
+const unsigned long DOOR_STATUS_UPDATE_INTERVAL = 1000; // 1초마다 최대 1번
 
 void loop() {
   wifiManager.handle();
@@ -126,8 +138,10 @@ void loop() {
     // Serial.println("--------------------------------");
 
     // ====================== 자동 문잠김 ======================
-    if(!isDoorOpen && ((millis() - doorOpenTime) > autoLockTime)){
-      digitalWrite(SOLENOID_LOCK, HIGH);
+    if(!isDoorOpen && !autoLockDone && ((millis() - doorOpenTime) > autoLockTime)){
+      digitalWrite(SOLENOID_LOCK, LOW);
+      Serial.println("자동으로 문닫힘");
+      autoLockDone = true; // 한 번만 실행되게 플래그 ON
     }
     // ====================== 스위치 동작 체크 ======================
     SWITCH_STATE = digitalRead(DOOR_OPEN_SWITCH);
@@ -143,12 +157,12 @@ void loop() {
           buttonPressTime = millis();
         } else {
           unsigned long pressDuration = millis() - buttonPressTime;
-          if (pressDuration >= debounceDelay_For_Init_Setting) {
+          if (pressDuration >= debounceDelay_For_Init_Setting && !isFirstStart) {
             Serial.println("길게누름 : 초기화함");
-            // 초기화 모드 실행
+            wifiManager.clearSettings(true);
           } else {
             Serial.println("짧게누름 : 문열림");
-            digitalWrite(SOLENOID_LOCK, LOW);
+            digitalWrite(SOLENOID_LOCK, HIGH);
           }
         }
       }
@@ -157,17 +171,33 @@ void loop() {
 
     // ====================== 도어센서 체크 =========================
     SENSOR_STATE = digitalRead(DOOR_SENSOR_PIN);
-    Serial.print("센서 상태 : ");
-    Serial.println(SENSOR_STATE);
+    // Serial.print("센서 상태 : ");
+    // Serial.println(SENSOR_STATE);
+    
+    // 센서 상태 변경 감지
+    if(SENSOR_STATE != LAST_SENSOR_STATE) {
+      Serial.println("센서 상태 변경 감지!");
+      LAST_SENSOR_STATE = SENSOR_STATE;
+    }
+    
     if(SENSOR_STATE == HIGH) {
       isDoorOpen = true;
       doorOpenTime = millis();
-      Serial.println("열림");
-      // 근데 생각해봤는데 문이 열리는 시나리오도 작성해야하나? 문이 안 닫혀있을 경우??
+      autoLockDone = false; // 문이 다시 열리면 자동 잠금 플래그 리셋
     } else {
       isDoorOpen = false;
     }
 
+    // ====================== 문 상태 서버 전송 ======================
+    // 문 상태가 변경되었고, 마지막 업데이트로부터 충분한 시간이 지났을 때만 전송
+    if(isDoorOpen != lastDoorOpenState && 
+       (millis() - lastDoorStatusUpdate) > DOOR_STATUS_UPDATE_INTERVAL) {
+      
+      Serial.println("문 상태 변경 감지 - 서버에 전송");
+      sendDoorStatusToServer(isDoorOpen);
+      lastDoorOpenState = isDoorOpen;
+      lastDoorStatusUpdate = millis();
+    }
 
     // ====================== 중간 내용 =============================
     
@@ -218,7 +248,7 @@ void loop() {
       if (error) {
         Serial.print("JSON 파싱 오류: ");
         Serial.println(error.f_str());
-        for (int i = 0; i > 3; i++) {
+        for (int i = 0; i < 3; i++) {
           digitalWrite(LED_PIN, HIGH);
           delay(150);
           digitalWrite(LED_PIN, LOW);
@@ -228,13 +258,13 @@ void loop() {
         const char* status = doc["status"];
         if (strcmp(status, "success") == 0) {
           Serial.println("출입 허용");
-          digitalWrite(SOLENOID_LOCK, LOW);
+          digitalWrite(SOLENOID_LOCK, HIGH);
           digitalWrite(LED_PIN, HIGH);
           delay(2000);
           digitalWrite(LED_PIN, LOW);
         } else {
           Serial.println("출입 거부");
-          for (int i = 0; i > 3; i++) {
+          for (int i = 0; i < 3; i++) {
             digitalWrite(LED_PIN, HIGH);
             delay(150);
             digitalWrite(LED_PIN, LOW);
@@ -254,14 +284,15 @@ void loop() {
     }
     // 너무 자주 실행되지 않게끔
     delay(500);
-
+    isFirstStart = false;
   } else if(wifiManager.isInConfigMode()) {
     // 설정 모드 - 사용자가 WiFi 설정 중
     static unsigned long lastConfigMsg = 0;
     if(millis() - lastConfigMsg > 10000) { // 10초마다
-        Serial.println("설정 모드 - WiFi 설정을 기다리는 중...");
-        Serial.println("디바이스 코드: " + wifiManager.getDeviceCode());
-        lastConfigMsg = millis();
+      Serial.println("설정 모드 - WiFi 설정을 기다리는 중...");
+      Serial.println("디바이스 코드: " + wifiManager.getDeviceCode());
+      lastConfigMsg = millis();
+      isFirstStart = true;
     }
   }
   if (WiFi.status() != WL_CONNECTED) {
@@ -269,6 +300,69 @@ void loop() {
   }
 }
 
+void sendDoorStatusToServer(bool doorStatus) {
+  /**
+   * 문 상태를 서버로 전송하는 함수
+   * @param doorStatus: true=열림, false=닫힘
+   */
+  if(!wifiManager.isConnected()) {
+    Serial.println("WiFi 연결 없음 - 문 상태 전송 실패");
+    return;
+  }
+  
+  HTTPClient http;
+  http.begin(DoorStatusURL);
+  http.addHeader("Content-Type", "application/json");
+  Serial.print("\n" + wifiManager.getDeviceCode() + "\n");
+  // JSON 데이터 생성
+  String jsonPayload = "{\"device_code\": \"" + wifiManager.getDeviceCode() + 
+                      "\", \"door_status\": " + (doorStatus ? "true" : "false") + "}";
+  
+  Serial.println("문 상태 전송 데이터: " + jsonPayload);
+  
+  // POST 요청 전송
+  int httpResponseCode = http.POST(jsonPayload);
+  String response = http.getString();
+  StaticJsonDocument<512> doc;
+  DeserializationError error = deserializeJson(doc, response);
+
+  if (!error) {
+    const char* status = doc["status"];
+    const char* message = doc["message"];
+
+    Serial.print("파싱된 status: ");
+    Serial.println(status);
+
+    Serial.print("파싱된 message: ");
+    Serial.println(message);  // 여기서 한글로 잘 보임
+  } else {
+    Serial.println("JSON 파싱 오류");
+  }
+  
+  if(httpResponseCode == 200) {
+    // JSON 응답 파싱
+    StaticJsonDocument<512> doc;
+    DeserializationError error = deserializeJson(doc, response);
+    if (!error) {
+      const char* status = doc["status"];
+      if (strcmp(status, "success") == 0) {
+        Serial.println("문 상태 서버 업데이트 성공");
+        // LED로 성공 신호 (짧게 깜빡)
+        digitalWrite(LED_PIN, HIGH);
+        delay(100);
+        digitalWrite(LED_PIN, LOW);
+      } else {
+        Serial.println("문 상태 서버 업데이트 실패: " + String(doc["message"].as<String>()));
+      }
+    } else {
+      Serial.println("문 상태 응답 JSON 파싱 오류");
+    }
+  } else {
+    Serial.println("문 상태 전송 HTTP 오류: " + String(httpResponseCode));
+  }
+  
+  http.end();
+}
 
 /**
  * Helper routine to dump a byte array as hex values to Serial. 
@@ -288,4 +382,3 @@ void printHex(byte *buffer, byte bufferSize) {
 //     Serial.println();
 //   }
 // }
-

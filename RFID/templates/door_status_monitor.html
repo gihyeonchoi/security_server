@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>문 상태 모니터링 - 춘천 폴리텍</title>
+    <link rel="stylesheet" href="/static/css/door_monitor.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🚪 문 상태 실시간 모니터링</h1>
+            <div class="status-summary">
+                <div class="summary-item">
+                    <span class="count">{{ total_rooms }}</span>
+                    <span class="label">전체 방</span>
+                </div>
+                <div class="summary-item open">
+                    <span class="count">{{ open_rooms }}</span>
+                    <span class="label">열림</span>
+                </div>
+                <div class="summary-item closed">
+                    <span class="count">{{ closed_rooms }}</span>
+                    <span class="label">닫힘</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="rooms-grid" id="roomsGrid">
+                {% for room in rooms %}
+                <div class="room-card {{ room.door_status|yesno:'open,closed' }}" 
+                     data-room-id="{{ room.id }}" 
+                     data-device-id="{{ room.device_id }}">
+                    <div class="room-header">
+                        <h3 class="room-name">{{ room.name }}</h3>
+                        <div class="door-status-icon">
+                            {% if room.door_status %}
+                                🔓
+                            {% else %}
+                                🔒
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="room-info">
+                        <p class="location">📍 {{ room.location }}</p>
+                        <p class="device-id">🔧 {{ room.device_id }}</p>
+                        <p class="required-level">🔐 보안등급: {{ room.required_level }}</p>
+                    </div>
+                    <div class="room-status">
+                        <span class="status-text">
+                            {% if room.door_status %}
+                                열림
+                            {% else %}
+                                닫힘
+                            {% endif %}
+                        </span>
+                        <span class="last-change">
+                            {% if room.last_door_change %}
+                                {{ room.last_door_change|date:"Y-m-d H:i:s" }}
+                            {% else %}
+                                변경 이력 없음
+                            {% endif %}
+                        </span>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="no-rooms">
+                    <p>등록된 방이 없습니다.</p>
+                </div>
+                {% endfor %}
+            </div>
+        </main>
+
+        <div class="controls">
+            <button id="refreshBtn" class="btn btn-primary">새로고침</button>
+            <button id="autoRefreshBtn" class="btn btn-secondary">자동 새로고침: OFF</button>
+            <span class="last-update">마지막 업데이트: <span id="lastUpdate">-</span></span>
+        </div>
+    </div>
+
+    <script src="/static/js/door_monitor.js"></script>
+</body>
+</html>

@@ -172,6 +172,7 @@ bool WiFiConfigManager::begin() {
             Serial.print("IP: ");
             Serial.println(WiFi.localIP());
             digitalWrite(ledPin, HIGH);
+            apName = preferences.getString("ap_name", "");
             
             if(_onConnectedCallback) {
                 _onConnectedCallback(WiFi.localIP().toString());
@@ -241,11 +242,12 @@ void WiFiConfigManager::handle() {
 }
 
 void WiFiConfigManager::clearSettings(bool resetApName) {
-    preferences.remove("ssid");
-    preferences.remove("password");
-    if (resetApName)
-      preferences.remove("ap_name");
-    Serial.println("WiFi 설정이 초기화되었습니다.");
+  preferences.remove("ssid");
+  preferences.remove("password");
+  if (resetApName)
+    preferences.remove("ap_name");
+  Serial.println("WiFi 설정이 초기화되었습니다.");
+  ESP.restart();
 }
 
 String WiFiConfigManager::randomApNAME(size_t length) {
