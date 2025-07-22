@@ -39,9 +39,10 @@ RST     : IO 13
 #define LED_PIN 2
 
 // #define ServerURL "http://chlrlgus.iptime.org:8000/RFID/test/"
-#define ServerURL "http://chlrlgus.iptime.org:8000/RFID/test/"
+#define ServerURL "http://192.168.0.104:8000/RFID/card_use/"
 // 문 상태 업데이트 URL 추가
-#define DoorStatusURL "http://chlrlgus.iptime.org:8000/RFID/door_status_update/"
+//#define DoorStatusURL "http://chlrlgus.iptime.org:8000/RFID/door_status_update/"
+#define DoorStatusURL "http://192.168.0.104:8000/RFID/door_status_update/"
 
 MFRC522 rfid(SS_PIN, RST_PIN); // Instance of the class
 
@@ -126,6 +127,14 @@ unsigned long doorOpenTime = 0;
 // 마지막 문 상태 업데이트 시간 (너무 자주 전송하지 않게 제한)
 unsigned long lastDoorStatusUpdate = 0;
 const unsigned long DOOR_STATUS_UPDATE_INTERVAL = 1000; // 1초마다 최대 1번
+
+void auto_door_lock() {
+  if(!isDoorOpen && !autoLockDone && ((millis() - doorOpenTime) > autoLockTime)){
+    digitalWrite(SOLENOID_LOCK, LOW);
+    Serial.println("자동으로 문닫힘");
+    autoLockDone = true; // 한 번만 실행되게 플래그 ON
+  }
+}
 
 void loop() {
   wifiManager.handle();
@@ -336,7 +345,7 @@ void sendDoorStatusToServer(bool doorStatus) {
     Serial.print("파싱된 message: ");
     Serial.println(message);  // 여기서 한글로 잘 보임
   } else {
-    Serial.println("JSON 파싱 오류");
+    Serial.println("문 상태 JSON 파싱 오류");
   }
   
   if(httpResponseCode == 200) {

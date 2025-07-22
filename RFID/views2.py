@@ -101,9 +101,9 @@ def card_use(request):
                 denial_reason = ''  # 빈 문자열로 설정
                 
                 # 문 열림 상태 업데이트
-                room.door_status = True
-                room.last_door_change = timezone.now()
-                room.save()
+                # room.door_status = True
+                # room.last_door_change = timezone.now()
+                # room.save()
                 
             else:
                 # 보안 등급 부족
@@ -138,7 +138,7 @@ def card_use(request):
                 }
             }
             
-            return JsonResponse(response_data)
+            return JsonResponse(response_data, json_dumps_params={'ensure_ascii': False})
 
         except json.JSONDecodeError as e:
             return JsonResponse({
