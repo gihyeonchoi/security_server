@@ -300,7 +300,7 @@
                         <span class="info-value">
                             <span class="door-indicator">
                                 <span class="door-status-icon {% if room.door_status %}door-open{% else %}door-closed{% endif %}"></span>
-                                {% if room.door_status %}열림{% else %}닫힘{% endif %}
+                                {% if room.door_status %}{% else %}{% endif %}
                             </span>
                         </span>
                     </div>
@@ -375,6 +375,227 @@
             // 방별 출입 로그 보기 (추후 구현)
             alert('방별 출입 로그 기능은 추후 구현 예정입니다.');
         }
+        // simple_door_refresh.js - 문 상태만 간단히 새로고침
+        class SimpleDoorRefresh {
+            constructor() {
+                this.isAutoRefresh = false;
+                this.refreshInterval = null;
+                this.refreshTime = 3000; // 3초마다
+                
+                this.init();
+            }
+            
+            init() {
+                // 컨트롤 버튼 생성
+                this.createControls();
+                
+                // 초기 로드
+                this.refreshDoorStatus();
+            }
+            
+            createControls() {
+                // 간단한 컨트롤 UI를 페이지에 추가
+                const controlsHTML = `
+                    <div style="position: fixed; bottom: 20px; right: 20px; background: white; padding: 15px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 1000;">
+                        <div style="margin-bottom: 10px;">
+                            <button id="toggleAutoRefresh" onclick="doorRefresh.toggleAutoRefresh()" 
+                                    style="padding: 8px 16px; background: #f44336; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px;">
+                                자동새로고침: OFF
+                            </button>
+                            <button onclick="doorRefresh.refreshDoorStatus()" 
+                                    style="padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                                새로고침
+                            </button>
+                        </div>
+                        <div style="font-size: 12px; color: #666;">
+                            마지막 업데이트: <span id="lastUpdate">-</span>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.insertAdjacentHTML('beforeend', controlsHTML);
+            }
+            
+            toggleAutoRefresh() {
+                const button = document.getElementById('toggleAutoRefresh');
+                
+                if (this.isAutoRefresh) {
+                    // 자동 새로고침 중지
+                    clearInterval(this.refreshInterval);
+                    this.isAutoRefresh = false;
+                    button.textContent = '자동새로고침: OFF';
+                    button.style.background = '#f44336';
+                    this.showMessage('자동 새로고침이 중지되었습니다.');
+                } else {
+                    // 자동 새로고침 시작
+                    this.refreshInterval = setInterval(() => {
+                        this.refreshDoorStatus();
+                    }, this.refreshTime);
+                    this.isAutoRefresh = true;
+                    button.textContent = '자동새로고침: ON';
+                    button.style.background = '#4caf50';
+                    this.showMessage('자동 새로고침이 시작되었습니다. (3초마다)');
+                }
+            }
+            
+            async refreshDoorStatus() {
+                try {
+                    // 현재 페이지의 URL 파라미터 가져오기
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const response = await fetch(`/RFID/door_status_get/?${urlParams.toString()}`);
+                    const data = await response.json();
+                    
+                    if (data.status === 'success') {
+                        this.updateDoorStatuses(data.data.rooms);
+                        this.updateLastRefreshTime();
+                        
+                        // 자동 새로고침이 아닐 때만 메시지 표시
+                        if (!this.isAutoRefresh) {
+                            this.showMessage('문 상태가 업데이트되었습니다.');
+                        }
+                    }
+                } catch (error) {
+                    console.error('문 상태 업데이트 오류:', error);
+                    this.showMessage('업데이트에 실패했습니다.', 'error');
+                }
+            }
+            
+            updateDoorStatuses(rooms) {
+                // 각 방 카드를 찾아서 문 상태만 업데이트
+                const roomCards = document.querySelectorAll('.room-card');
+                
+                roomCards.forEach(card => {
+                    // 방의 device_id나 이름으로 매칭
+                    const roomName = card.querySelector('.room-name')?.textContent.trim();
+                    const deviceIdElement = card.querySelector('.info-value');
+                    let deviceId = null;
+                    
+                    // device_id 찾기 (기기 ID 라벨 다음 값)
+                    const infoItems = card.querySelectorAll('.info-item');
+                    infoItems.forEach(item => {
+                        const label = item.querySelector('.info-label')?.textContent.trim();
+                        if (label === '기기 ID') {
+                            deviceId = item.querySelector('.info-value')?.textContent.trim();
+                        }
+                    });
+                    
+                    // 해당하는 방 데이터 찾기
+                    const roomData = rooms.find(room => 
+                        room.name === roomName || room.device_id === deviceId
+                    );
+                    
+                    if (roomData) {
+                        this.updateSingleRoomDoorStatus(card, roomData);
+                    }
+                });
+            }
+            
+            updateSingleRoomDoorStatus(card, roomData) {
+                // 문 상태 표시 영역 찾기
+                const infoItems = card.querySelectorAll('.info-item');
+                
+                infoItems.forEach(item => {
+                    const label = item.querySelector('.info-label')?.textContent.trim();
+                    if (label === '문 상태') {
+                        const doorIndicator = item.querySelector('.door-indicator');
+                        const doorIcon = item.querySelector('.door-status-icon');
+                        
+                        if (doorIndicator && doorIcon) {
+                            // 기존 클래스 제거
+                            doorIcon.classList.remove('door-open', 'door-closed');
+                            
+                            // 새 상태 적용
+                            if (roomData.door_status) {
+                                doorIcon.classList.add('door-open');
+                                // 텍스트 업데이트
+                                const textNodes = Array.from(doorIndicator.childNodes).filter(node => 
+                                    node.nodeType === Node.TEXT_NODE
+                                );
+                                if (textNodes.length > 0) {
+                                    textNodes[0].textContent = '열림';
+                                }
+                            } else {
+                                doorIcon.classList.add('door-closed');
+                                // 텍스트 업데이트
+                                const textNodes = Array.from(doorIndicator.childNodes).filter(node => 
+                                    node.nodeType === Node.TEXT_NODE
+                                );
+                                if (textNodes.length > 0) {
+                                    textNodes[0].textContent = '닫힘';
+                                }
+                            }
+                            
+                            // 깜빡임 효과
+                            doorIcon.style.animation = 'none';
+                            setTimeout(() => {
+                                doorIcon.style.animation = 'pulse 2s infinite';
+                            }, 100);
+                        }
+                    }
+                });
+            }
+            
+            updateLastRefreshTime() {
+                const lastUpdate = document.getElementById('lastUpdate');
+                if (lastUpdate) {
+                    lastUpdate.textContent = new Date().toLocaleString('ko-KR');
+                }
+            }
+            
+            showMessage(message, type = 'success') {
+                // 간단한 알림 메시지
+                const messageDiv = document.createElement('div');
+                messageDiv.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    padding: 15px 20px;
+                    background: ${type === 'error' ? '#f44336' : '#4caf50'};
+                    color: white;
+                    border-radius: 5px;
+                    z-index: 1001;
+                    font-size: 14px;
+                    opacity: 0;
+                    transform: translateY(-20px);
+                    transition: all 0.3s ease;
+                `;
+                messageDiv.textContent = message;
+                
+                document.body.appendChild(messageDiv);
+                
+                // 애니메이션
+                setTimeout(() => {
+                    messageDiv.style.opacity = '1';
+                    messageDiv.style.transform = 'translateY(0)';
+                }, 100);
+                
+                // 3초 후 제거
+                setTimeout(() => {
+                    messageDiv.style.opacity = '0';
+                    messageDiv.style.transform = 'translateY(-20px)';
+                    setTimeout(() => {
+                        if (messageDiv.parentNode) {
+                            messageDiv.parentNode.removeChild(messageDiv);
+                        }
+                    }, 300);
+                }, 3000);
+            }
+        }
+
+        // 전역 변수로 선언하여 HTML에서 접근 가능하게 함
+        let doorRefresh;
+
+        // 페이지 로드 시 초기화
+        document.addEventListener('DOMContentLoaded', () => {
+            doorRefresh = new SimpleDoorRefresh();
+        });
+
+        // 페이지 떠날 때 정리
+        window.addEventListener('beforeunload', () => {
+            if (doorRefresh && doorRefresh.refreshInterval) {
+                clearInterval(doorRefresh.refreshInterval);
+            }
+        });
     </script>
 </body>
 </html>
