@@ -1,0 +1,25 @@
+<!-- CCTV/templates/cctv/base.html -->
+{% load static %}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}CCTV 관리{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <header>
+        <h1>CCTV 카메라 관리 시스템</h1>
+        <nav>
+            <a href="{% url 'cctv:dashboard' %}">대시보드</a>
+        </nav>
+    </header>
+    
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

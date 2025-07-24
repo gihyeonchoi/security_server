@@ -1,0 +1,92 @@
+<!-- CCTV/templates/dashboard.html -->
+{% extends 'base.html' %}
+
+{% block title %}CCTV 대시보드{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="header-actions">
+        <h2>카메라 목록</h2>
+        <button onclick="showAddCameraModal()" class="btn btn-primary">새 카메라 추가</button>
+    </div>
+    
+    <div class="camera-grid">
+        {% for camera in cameras %}
+        <div class="camera-card" data-camera-id="{{ camera.id }}">
+            <div class="camera-header">
+                <h3>{{ camera.name }}</h3>
+                <span class="status-badge {% if camera.is_active %}active{% else %}inactive{% endif %}">
+                    {{ camera.is_active|yesno:"활성,비활성" }}
+                </span>
+            </div>
+            <div class="camera-info">
+                <p><strong>RTSP:</strong> <code>{{ camera.rtsp_url }}</code></p>
+                <p><strong>FPS:</strong> {{ camera.max_fps }}</p>
+                <p><strong>워크플로우:</strong> {{ camera.workflow_id }}</p>
+            </div>
+            <div class="camera-actions">
+                <button onclick="toggleCamera({{ camera.id }})" class="btn btn-sm">
+                    {{ camera.is_active|yesno:"비활성화,활성화" }}
+                </button>
+                <button onclick="editCamera({{ camera.id }})" class="btn btn-sm">수정</button>
+                <button onclick="deleteCamera({{ camera.id }})" class="btn btn-sm btn-danger">삭제</button>
+                <a href="{% url 'cctv:camera_detail' camera.id %}" class="btn btn-sm">상세보기</a>
+            </div>
+        </div>
+        {% empty %}
+        <p class="no-cameras">등록된 카메라가 없습니다.</p>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- 카메라 추가/수정 모달 -->
+<div id="cameraModal" class="modal">
+    <div class="modal-content">
+        <h3 id="modalTitle">카메라 추가</h3>
+        <form id="cameraForm">
+            <input type="hidden" id="cameraId" name="id">
+            
+            <div class="form-group">
+                <label for="name">카메라 이름</label>
+                <input type="text" id="name" name="name" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="api_key">API Key</label>
+                <input type="text" id="api_key" name="api_key" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="workspace_name">Workspace Name</label>
+                <input type="text" id="workspace_name" name="workspace_name" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="workflow_id">Workflow ID</label>
+                <input type="text" id="workflow_id" name="workflow_id" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="rtsp_url">RTSP URL</label>
+                <input type="text" id="rtsp_url" name="rtsp_url" placeholder="rtsp://..." required>
+            </div>
+            
+            <div class="form-group">
+                <label for="max_fps">Max FPS</label>
+                <input type="number" id="max_fps" name="max_fps" min="1" max="60" value="15" required>
+            </div>
+            
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">저장</button>
+                <button type="button" onclick="closeModal()" class="btn">취소</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% load static %}
+
+{% block extra_js %}
+    <script src="{% static 'js/dashboard.js' %}"></script>
+{% endblock %}

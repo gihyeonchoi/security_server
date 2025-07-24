@@ -22,4 +22,5 @@ from django.urls import path, include
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('RFID/', include('RFID.urls')),
+    path('CCTV/', include('CCTV.urls')),
 ]

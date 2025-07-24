@@ -1,0 +1,176 @@
+<!-- CCTV/templates/camera_detail.html -->
+{% extends 'base.html' %}
+{% load static %}
+
+<link rel="stylesheet" href="{% static 'css/style.css' %}">
+
+{% block title %}{{ camera.name }} - 상세정보{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="camera-detail-header">
+        <h2>{{ camera.name }}</h2>
+        <a href="{% url 'cctv:dashboard' %}" class="btn btn-sm">목록으로</a>
+    </div>
+    
+    <div class="camera-detail-card">
+        <div class="detail-section">
+            <h3>기본 정보</h3>
+            <table class="detail-table">
+                <tr>
+                    <th>카메라 이름:</th>
+                    <td>{{ camera.name }}</td>
+                </tr>
+                <tr>
+                    <th>상태:</th>
+                    <td>
+                        <span class="status-badge {% if camera.is_active %}active{% else %}inactive{% endif %}">
+                            {{ camera.is_active|yesno:"활성,비활성" }}
+                        </span>
+                    </td>
+                </tr>
+                <tr>
+                    <th>생성일:</th>
+                    <td>{{ camera.created_at|date:"Y-m-d H:i" }}</td>
+                </tr>
+                <tr>
+                    <th>수정일:</th>
+                    <td>{{ camera.updated_at|date:"Y-m-d H:i" }}</td>
+                </tr>
+            </table>
+        </div>
+        
+        <div class="detail-section">
+            <h3>ROBOFLOW 설정</h3>
+            <table class="detail-table">
+                <tr>
+                    <th>API Key:</th>
+                    <td><code>{{ camera.api_key|slice:":10" }}...</code></td>
+                </tr>
+                <tr>
+                    <th>Workspace:</th>
+                    <td>{{ camera.workspace_name }}</td>
+                </tr>
+                <tr>
+                    <th>Workflow ID:</th>
+                    <td>{{ camera.workflow_id }}</td>
+                </tr>
+            </table>
+        </div>
+        
+        <div class="detail-section">
+            <h3>스트림 설정</h3>
+            <table class="detail-table">
+                <tr>
+                    <th>RTSP URL:</th>
+                    <td><code>{{ camera.rtsp_url }}</code></td>
+                </tr>
+                <tr>
+                    <th>최대 FPS:</th>
+                    <td>{{ camera.max_fps }}</td>
+                </tr>
+            </table>
+        </div>
+        
+        <div class="detail-section">
+            <h3>API 엔드포인트</h3>
+            <div class="api-endpoints">
+                <p><strong>설정 조회:</strong></p>
+                <code class="api-url">GET /CCTV/api/cameras/{{ camera.id }}/</code>
+                
+                <p><strong>ROBOFLOW 설정:</strong></p>
+                <code class="api-url">GET /CCTV/api/cameras/{{ camera.id }}/config_dict/</code>
+            </div>
+        </div>
+        
+        <div class="detail-actions">
+            <button onclick="editCamera({{ camera.id }})" class="btn btn-primary">수정</button>
+            <button onclick="toggleCamera({{ camera.id }})" class="btn">
+                {{ camera.is_active|yesno:"비활성화,활성화" }}
+            </button>
+            <button onclick="deleteCamera({{ camera.id }})" class="btn btn-danger">삭제</button>
+        </div>
+    </div>
+</div>
+
+<!-- 수정 모달 (dashboard.html과 동일) -->
+<div id="cameraModal" class="modal">
+    <div class="modal-content">
+        <h3 id="modalTitle">카메라 수정</h3>
+        <form id="cameraForm">
+            <input type="hidden" id="cameraId" name="id" value="{{ camera.id }}">
+            
+            <div class="form-group">
+                <label for="name">카메라 이름</label>
+                <input type="text" id="name" name="name" value="{{ camera.name }}" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="api_key">API Key</label>
+                <input type="text" id="api_key" name="api_key" value="{{ camera.api_key }}" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="workspace_name">Workspace Name</label>
+                <input type="text" id="workspace_name" name="workspace_name" value="{{ camera.workspace_name }}" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="workflow_id">Workflow ID</label>
+                <input type="text" id="workflow_id" name="workflow_id" value="{{ camera.workflow_id }}" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="rtsp_url">RTSP URL</label>
+                <input type="text" id="rtsp_url" name="rtsp_url" value="{{ camera.rtsp_url }}" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="max_fps">Max FPS</label>
+                <input type="number" id="max_fps" name="max_fps" min="1" max="60" value="{{ camera.max_fps }}" required>
+            </div>
+            
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">저장</button>
+                <button type="button" onclick="closeModal()" class="btn">취소</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/dashboard.js' %}"></script>
+<script>
+    // 상세 페이지에서 바로 수정 모달 열기
+    function editCamera(cameraId) {
+        document.getElementById('cameraModal').style.display = 'block';
+    }
+
+    // 삭제 후 목록으로 이동
+    const originalDelete = deleteCamera;
+    deleteCamera = async function(cameraId) {
+        if (!confirm('정말로 이 카메라를 삭제하시겠습니까?')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/cctv/api/cameras/${cameraId}/`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRFToken': getCookie('csrftoken')
+                }
+            });
+            
+            if (response.ok) {
+                window.location.href = "{% url 'cctv:dashboard' %}";
+            } else {
+                alert('카메라 삭제에 실패했습니다.');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('오류가 발생했습니다.');
+        }
+    }
+</script>
+{% endblock %}
