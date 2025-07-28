@@ -1,12 +1,12 @@
 <!-- CCTV/templates/camera_detail.html -->
 {% extends 'base.html' %}
-{% load static %}
-
-<link rel="stylesheet" href="{% static 'css/CCTV_style.css' %}">
 
 {% block title %}{{ camera.name }} - 상세정보{% endblock %}
 
 {% block content %}
+{% load static %}
+<link rel="stylesheet" href="{% static 'css/CCTV_style.css' %}">
+
 <div class="container">
     <div class="camera-detail-header">
         <h2>{{ camera.name }}</h2>
