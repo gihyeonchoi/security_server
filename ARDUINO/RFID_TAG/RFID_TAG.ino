@@ -30,7 +30,7 @@ RST     : IO 13
 #define DOOR_SENSOR_PIN 27
 
 // 안쪽 문열림 핀 설정
-#define DOOR_OPEN_SWITCH 26
+#define DOOR_OPEN_SWITCH 26                                                                                                                      
 
 // 솔레노이드 락 핀 설정
 #define SOLENOID_LOCK 25
@@ -68,9 +68,6 @@ WiFiConfigManager wifiManager(2); // 2번핀 확인용 (2번핀은 내장 LED (�
 
 void setup() { 
   Serial.begin(115200);
-  while(!Serial) delay(10); // 시리얼 준비 대기
-  Serial.flush();
-  
   SPI.begin(); // Init SPI bus
   rfid.PCD_Init(); // Init MFRC522
 
