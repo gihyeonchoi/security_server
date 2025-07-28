@@ -4,6 +4,8 @@
 {% block title %}CCTV 대시보드{% endblock %}
 
 {% block content %}
+{% load static %}
+<link rel="stylesheet" href="{% static 'css/CCTV_style.css' %}">
 <div class="container">
     <div class="header-actions">
         <h2>카메라 목록</h2>
