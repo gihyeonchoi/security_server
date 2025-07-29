@@ -1,0 +1,100 @@
+<!-- CCTV/templates/live_view.html -->
+{% extends 'base.html' %}
+
+{% block title %}라이브 모니터링{% endblock %}
+
+{% block extra_css %}
+{% load static %}
+<link rel="stylesheet" href="{% static 'css/live_view.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="live-header">
+        <h2>실시간 CCTV 모니터링</h2>
+        <div class="header-controls">
+            <select id="layoutSelect" class="control-select">
+                <option value="1">1개 화면</option>
+                <option value="4" selected>4개 화면</option>
+                <option value="9">9개 화면</option>
+            </select>
+            <button id="toggleAllDetection" class="btn btn-primary">전체 AI 분석 시작</button>
+            <button id="stopAllDetection" class="btn btn-secondary">전체 중지</button>
+        </div>
+    </div>
+    
+    <div id="cameraGrid" class="camera-live-grid grid-4">
+        {% for camera in cameras %}
+        {% if camera.is_active %}
+        <div class="live-camera-item" data-camera-id="{{ camera.id }}">
+            <div class="camera-title">
+                <span class="camera-name">{{ camera.name }}</span>
+                <span class="status-indicator" id="status-{{ camera.id }}">●</span>
+                <span class="websocket-status" id="ws-status-{{ camera.id }}">🔴</span>
+            </div>
+            <div class="video-container">
+                <canvas id="canvas-{{ camera.id }}" class="camera-canvas"></canvas>
+                <div class="loading-overlay" id="loading-{{ camera.id }}">
+                    <div class="spinner"></div>
+                    <p>Pipeline 연결 중...</p>
+                </div>
+                <div class="detection-overlay" id="detection-{{ camera.id }}"></div>
+            </div>
+            <div class="camera-controls">
+                <button onclick="toggleDetection({{ camera.id }})" class="btn-icon" title="감지 시작/중지">
+                    <span id="detection-toggle-{{ camera.id }}">▶️</span>
+                </button>
+                <button onclick="fullscreenCamera({{ camera.id }})" class="btn-icon" title="전체화면">
+                    🔳
+                </button>
+                <button onclick="captureSnapshot({{ camera.id }})" class="btn-icon" title="스냅샷">
+                    📷
+                </button>
+                <span class="pipeline-status" id="pipeline-status-{{ camera.id }}">중지됨</span>
+            </div>
+            <div class="detection-info" id="info-{{ camera.id }}">
+                <p>감지된 객체: <span id="object-count-{{ camera.id }}">0</span></p>
+                <p>마지막 업데이트: <span id="last-update-{{ camera.id }}">-</span></p>
+                <div id="detection-list-{{ camera.id }}" class="detection-list"></div>
+            </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+    
+    <!-- 전체화면 모달 -->
+    <div id="fullscreenModal" class="fullscreen-modal">
+        <div class="fullscreen-header">
+            <h3 id="fullscreenTitle"></h3>
+            <button onclick="closeFullscreen()" class="btn btn-sm">닫기</button>
+        </div>
+        <canvas id="fullscreenCanvas" class="fullscreen-canvas"></canvas>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/live_view.js' %}"></script>
+<script>
+    // 카메라 설정 데이터 전달
+    const cameraConfigs = {
+        {% for camera in cameras %}
+        {% if camera.is_active %}
+        {{ camera.id }}: {
+            name: "{{ camera.name }}",
+            rtspUrl: "{{ camera.rtsp_url }}",
+            maxFps: {{ camera.max_fps }},
+            apiKey: "{{ camera.api_key }}",
+            workspaceName: "{{ camera.workspace_name }}",
+            workflowId: "{{ camera.workflow_id }}"
+        },
+        {% endif %}
+        {% endfor %}
+    };
+    
+    // 페이지 로드 시 초기화
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeLiveViewWithWebSocket(cameraConfigs);
+    });
+</script>
+{% endblock %}
