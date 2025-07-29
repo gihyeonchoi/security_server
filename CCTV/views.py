@@ -1,6 +1,7 @@
-# CCTV/views.py
+# CCTV/views.py - InferencePipeline + WebSocket 연동 버전
+
 from django.shortcuts import render, get_object_or_404
-from django.http import JsonResponse
+from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from rest_framework import viewsets, status
@@ -8,7 +9,29 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import CameraConfig
 from .serializers import CameraConfigSerializer
+from .roboflow_service import pipeline_manager, start_camera_detection, stop_camera_detection, start_all_detection, stop_all_detection, get_detection_status
 import json
+import asyncio
+from asgiref.sync import sync_to_async
+
+detection_tasks = {}
+
+def launch_detection_task(camera_id):
+    camera = CameraConfig.objects.get(id=camera_id)
+    config = {
+        "api_key": camera.api_key,
+        "workspace_name": camera.workspace_name,
+        "workflow_id": camera.workflow_id,
+        "rtsp_url": camera.rtsp_url,
+        "max_fps": camera.max_fps,
+    }
+
+    # asyncio task 시작
+    task = asyncio.create_task(start_camera_detection(camera_id, config))
+    detection_tasks[camera_id] = task
+
+
+# Pipeline 기반 감지 관리 - 전역 변수 제거 (WebSocket으로 대체)
 
 # HTML 뷰
 def camera_dashboard(request):
@@ -21,7 +44,183 @@ def camera_detail(request, camera_id):
     camera = get_object_or_404(CameraConfig, id=camera_id)
     return render(request, 'camera_detail.html', {'camera': camera})
 
-# REST API ViewSet
+def live_view(request):
+    """라이브 모니터링 페이지"""
+    cameras = CameraConfig.objects.filter(is_active=True)
+    return render(request, 'live_view.html', {'cameras': cameras})
+
+# Pipeline 기반으로 변경 - 기존 스트림 코드 제거
+# WebSocket을 통해 실시간 감지 결과 전송
+
+def video_feed(request, camera_id):
+    """개별 카메라의 비디오 스트림 - Pipeline 방식으로 변경"""
+    # 단순한 상태 메시지 반환 (실제 스트림은 WebSocket으로 처리)
+    return JsonResponse({
+        'message': 'Pipeline 기반 스트림 사용 중',
+        'camera_id': camera_id,
+        'websocket_url': f'/ws/cctv/camera/{camera_id}/'
+    })
+
+@csrf_exempt
+def detection_results(request, camera_id):
+    """현재 감지 상태 조회 (Pipeline 기반)"""
+    if request.method == 'GET':
+        camera_id = int(camera_id)
+        status_dict = get_detection_status()
+        
+        return JsonResponse({
+            'status': 'success',
+            'camera_id': camera_id,
+            'pipeline_running': camera_id in status_dict,
+            'pipeline_status': status_dict.get(camera_id, 'stopped'),
+            'websocket_url': f'/ws/cctv/camera/{camera_id}/'
+        })
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+# 새로운 Pipeline 제어 엔드포인트들
+@csrf_exempt
+def start_detection(request, camera_id):
+    """특정 카메라 감지 시작"""
+    if request.method == 'POST':
+        try:
+            camera_id = int(camera_id)
+            # 비동기 함수를 백그라운드에서 실행
+            import threading
+            def run_async():
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(start_camera_detection(camera_id))
+                loop.close()
+            
+            thread = threading.Thread(target=run_async)
+            thread.daemon = True
+            thread.start()
+            
+            return JsonResponse({
+                'status': 'success',
+                'message': f'카메라 {camera_id} 감지 시작',
+                'camera_id': camera_id
+            })
+        except Exception as e:
+            return JsonResponse({
+                'status': 'error',
+                'message': str(e)
+            }, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+@csrf_exempt
+def stop_detection(request, camera_id):
+    """특정 카메라 감지 중지"""
+    if request.method == 'POST':
+        try:
+            camera_id = int(camera_id)
+            # 비동기 함수를 백그라운드에서 실행
+            import threading
+            def run_async():
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(stop_camera_detection(camera_id))
+                loop.close()
+            
+            thread = threading.Thread(target=run_async)
+            thread.daemon = True
+            thread.start()
+            
+            return JsonResponse({
+                'status': 'success',
+                'message': f'카메라 {camera_id} 감지 중지',
+                'camera_id': camera_id
+            })
+        except Exception as e:
+            return JsonResponse({
+                'status': 'error',
+                'message': str(e)
+            }, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+@csrf_exempt
+def start_all_detection_view(request):
+    """모든 활성 카메라 감지 시작"""
+    if request.method == 'POST':
+        try:
+            # 비동기 함수를 백그라운드에서 실행
+            import threading
+            def run_async():
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(start_all_detection())
+                loop.close()
+            
+            thread = threading.Thread(target=run_async)
+            thread.daemon = True
+            thread.start()
+            return JsonResponse({
+                'status': 'success',
+                'message': '모든 카메라 감지 시작'
+            })
+        except Exception as e:
+            return JsonResponse({
+                'status': 'error',
+                'message': str(e)
+            }, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+@csrf_exempt
+def stop_all_detection_view(request):
+    """모든 카메라 감지 중지"""
+    if request.method == 'POST':
+        try:
+            # 비동기 함수를 백그라운드에서 실행
+            import threading
+            def run_async():
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(stop_all_detection())
+                loop.close()
+            
+            thread = threading.Thread(target=run_async)
+            thread.daemon = True
+            thread.start()
+            return JsonResponse({
+                'status': 'success',
+                'message': '모든 카메라 감지 중지'
+            })
+        except Exception as e:
+            return JsonResponse({
+                'status': 'error',
+                'message': str(e)
+            }, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+@csrf_exempt
+def detection_status_view(request):
+    """전체 감지 상태 조회"""
+    if request.method == 'GET':
+        try:
+            status_dict = get_detection_status()
+            return JsonResponse({
+                'status': 'success',
+                'pipelines': status_dict,
+                'active_count': len(status_dict)
+            })
+        except Exception as e:
+            return JsonResponse({
+                'status': 'error',
+                'message': str(e)
+            }, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+# REST API ViewSet (기존 코드 유지)
 class CameraConfigViewSet(viewsets.ModelViewSet):
     """카메라 설정 API ViewSet"""
     queryset = CameraConfig.objects.all()
@@ -56,7 +255,7 @@ class CameraConfigViewSet(viewsets.ModelViewSet):
         }
         return Response(config)
 
-# 간단한 JSON API (REST framework 없이)
+# 간단한 JSON API (기존 코드 유지)
 @csrf_exempt
 def camera_config_json(request, camera_id=None):
     """간단한 JSON API 엔드포인트"""
