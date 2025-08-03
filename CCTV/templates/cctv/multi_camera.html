@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>다중 카메라 모니터링</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .camera-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 15px;
+            padding: 10px;
+        }
+        
+        .camera-container {
+            background-color: #2a2a2a;
+            border-radius: 8px;
+            padding: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+        
+        .camera-title {
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        
+        .camera-stream {
+            width: 100%;
+            height: 300px;
+            background-color: #000;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        
+        .camera-stream img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        
+        .camera-info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #ccc;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        
+        .status-online {
+            background-color: #4CAF50;
+        }
+        
+        .status-offline {
+            background-color: #f44336;
+        }
+        
+        .loading {
+            color: #888;
+            font-style: italic;
+        }
+        
+        .error {
+            color: #f44336;
+        }
+        
+        .controls {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .btn {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 0 5px;
+        }
+        
+        .btn:hover {
+            background-color: #45a049;
+        }
+        
+        .btn-secondary {
+            background-color: #6c757d;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #5a6268;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>다중 카메라 모니터링 시스템</h1>
+        <div class="controls">
+            <button class="btn" onclick="refreshAll()">전체 새로고침</button>
+            <button class="btn btn-secondary" onclick="window.location.href='/cctv/'">대시보드로 돌아가기</button>
+        </div>
+    </div>
+    
+    <div class="camera-grid" id="cameraGrid">
+        {% for camera in cameras %}
+        <div class="camera-container" data-camera-id="{{ camera.id }}">
+            <div class="camera-title">
+                <span class="status-indicator status-offline" id="status-{{ camera.id }}"></span>
+                {{ camera.name }} ({{ camera.location }})
+            </div>
+            <div class="camera-stream" id="stream-{{ camera.id }}">
+                <div class="loading">연결 중...</div>
+            </div>
+            <div class="camera-info">
+                <span>ID: {{ camera.id }}</span>
+                <span id="fps-{{ camera.id }}">FPS: -</span>
+                <span id="detection-count-{{ camera.id }}">감지: -</span>
+            </div>
+        </div>
+        {% empty %}
+        <div style="grid-column: 1 / -1; text-align: center; color: #888;">
+            등록된 카메라가 없습니다.
+        </div>
+        {% endfor %}
+    </div>
+
+    <script>
+        let cameraStreams = {};
+        let statusUpdateInterval;
+
+        // 페이지 로드 시 초기화
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeCameras();
+            startStatusUpdates();
+        });
+
+        function initializeCameras() {
+            const cameraIds = [
+                {% for camera in cameras %}
+                '{{ camera.id }}'{% if not forloop.last %},{% endif %}
+                {% endfor %}
+            ];
+            
+            cameraIds.forEach(cameraId => {
+                loadCameraStream(cameraId);
+            });
+        }
+
+        function loadCameraStream(cameraId) {
+            const streamContainer = document.getElementById(`stream-${cameraId}`);
+            const statusIndicator = document.getElementById(`status-${cameraId}`);
+            
+            // 이미지 요소 생성
+            const img = document.createElement('img');
+            // img.src = `/cctv/single_camera_stream/${cameraId}/`;
+            img.src = `/cctv/camera/${cameraId}/stream/`;
+            img.alt = `Camera ${cameraId} Stream`;
+            img.style.display = 'none';
+            
+            // 로딩 완료 시
+            img.onload = function() {
+                streamContainer.innerHTML = '';
+                streamContainer.appendChild(img);
+                img.style.display = 'block';
+                statusIndicator.classList.remove('status-offline');
+                statusIndicator.classList.add('status-online');
+            };
+            
+            // 에러 발생 시
+            img.onerror = function() {
+                streamContainer.innerHTML = '<div class="error">스트림 연결 실패</div>';
+                statusIndicator.classList.remove('status-online');
+                statusIndicator.classList.add('status-offline');
+                
+                // 5초 후 재시도
+                setTimeout(() => {
+                    loadCameraStream(cameraId);
+                }, 5000);
+            };
+            
+            cameraStreams[cameraId] = img;
+        }
+
+        function startStatusUpdates() {
+            // 5초마다 카메라 상태 업데이트
+            statusUpdateInterval = setInterval(updateCameraStatus, 5000);
+            updateCameraStatus(); // 즉시 한 번 실행
+        }
+
+        function updateCameraStatus() {
+            fetch('/cctv/api/camera-status/')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        for (const [cameraId, status] of Object.entries(data.cameras)) {
+                            updateCameraInfo(cameraId, status);
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('상태 업데이트 실패:', error);
+                });
+        }
+
+        function updateCameraInfo(cameraId, status) {
+            const fpsElement = document.getElementById(`fps-${cameraId}`);
+            const detectionElement = document.getElementById(`detection-count-${cameraId}`);
+            const statusElement = document.getElementById(`status-${cameraId}`);
+            
+            if (fpsElement) {
+                fpsElement.textContent = `FPS: ${status.avg_fps.toFixed(1)}`;
+            }
+            
+            if (detectionElement) {
+                detectionElement.textContent = `감지: ${status.tracker_count}`;
+            }
+            
+            if (statusElement) {
+                if (status.is_connected) {
+                    statusElement.classList.remove('status-offline');
+                    statusElement.classList.add('status-online');
+                } else {
+                    statusElement.classList.remove('status-online');
+                    statusElement.classList.add('status-offline');
+                }
+            }
+        }
+
+        function refreshAll() {
+            // 모든 스트림 다시 로드
+            for (const cameraId in cameraStreams) {
+                loadCameraStream(cameraId);
+            }
+            
+            // 상태 즉시 업데이트
+            updateCameraStatus();
+        }
+
+        // 페이지 언로드 시 정리
+        window.addEventListener('beforeunload', function() {
+            if (statusUpdateInterval) {
+                clearInterval(statusUpdateInterval);
+            }
+        });
+    </script>
+</body>
+</html>

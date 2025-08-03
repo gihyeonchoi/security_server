@@ -22,5 +22,6 @@ from django.urls import path, include
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('RFID/', include('RFID.urls')),
-    path('CCTV/', include('CCTV.urls')),
+    path('cctv/', include('CCTV.urls')),
+    # path('CCTV/', include('CCTV.urls')),  # 대문자도 지원
 ]
