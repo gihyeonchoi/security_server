@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CCTV 설정</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f5f6fa;
+            color: #2c3e50;
+            line-height: 1.6;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50, #34495e);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
+
+        .status-info {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .card-header {
+            background: #ecf0f1;
+            padding: 15px 20px;
+            border-bottom: 1px solid #bdc3c7;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .card-body {
+            padding: 20px;
+        }
+
+        .camera-item {
+            border: 1px solid #ecf0f1;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            overflow: hidden;
+        }
+
+        .camera-header {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .camera-name {
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        .camera-id {
+            color: #7f8c8d;
+            font-size: 12px;
+        }
+
+        .camera-body {
+            padding: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .object-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .object-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .object-item:hover {
+            background: #e9ecef;
+        }
+
+        .object-item.selected {
+            background: #e3f2fd;
+            border-color: #2196f3;
+        }
+
+        .object-checkbox {
+            margin-right: 10px;
+        }
+
+        .object-label {
+            flex: 1;
+            font-size: 14px;
+        }
+
+        .object-description {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 2px;
+        }
+
+        .btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+            text-decoration: none;
+            display: inline-block;
+            margin-right: 10px;
+        }
+
+        .btn:hover {
+            background: #2980b9;
+        }
+
+        .btn.success {
+            background: #2ecc71;
+        }
+
+        .btn.success:hover {
+            background: #27ae60;
+        }
+
+        .btn.danger {
+            background: #e74c3c;
+        }
+
+        .btn.danger:hover {
+            background: #c0392b;
+        }
+
+        .btn.secondary {
+            background: #95a5a6;
+        }
+
+        .btn.secondary:hover {
+            background: #7f8c8d;
+        }
+
+        .actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        .alert.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f1aeb5;
+        }
+
+        .alert.info {
+            background: #cce7ff;
+            color: #004085;
+            border: 1px solid #b8daff;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #7f8c8d;
+        }
+
+        .loading::after {
+            content: '...';
+            animation: dots 1s infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+
+        /* 반응형 디자인 */
+        @media (max-width: 768px) {
+            .object-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .actions {
+                flex-direction: column;
+            }
+            
+            .btn {
+                width: 100%;
+                margin-right: 0;
+                margin-bottom: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>CCTV 카메라 설정</h1>
+        <div class="status-info">
+            감지 객체 설정 및 카메라 관리
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 상태 메시지 -->
+        <div id="alert-container"></div>
+
+        <!-- 전체 제어 -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">전체 제어</div>
+            </div>
+            <div class="card-body">
+                <p>모든 카메라에 동일한 감지 객체를 적용하거나 시스템 전체를 관리할 수 있습니다.</p>
+                <div class="actions">
+                    <button class="btn" onclick="applyToAll()">모든 카메라에 적용</button>
+                    <button class="btn secondary" onclick="resetAllToDefault()">기본값으로 초기화</button>
+                    <button class="btn danger" onclick="restartDetector()">시스템 재시작</button>
+                    <a href="{% url 'cctv:camera_grid' %}" class="btn success">모니터링 화면</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- 사용 가능한 객체 목록 -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">사용 가능한 감지 객체</div>
+            </div>
+            <div class="card-body">
+                <div id="available-objects-list" class="loading">
+                    사용 가능한 객체 목록을 불러오는 중
+                </div>
+            </div>
+        </div>
+
+        <!-- 카메라별 설정 -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">카메라별 설정</div>
+            </div>
+            <div class="card-body">
+                <div id="cameras-list" class="loading">
+                    카메라 설정을 불러오는 중
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let availableObjects = {};
+        let currentSettings = {};
+
+        // 페이지 로드 시 초기화
+        document.addEventListener('DOMContentLoaded', function() {
+            loadAvailableObjects();
+            loadCameraSettings();
+        });
+
+        // 사용 가능한 객체 목록 로드
+        async function loadAvailableObjects() {
+            try {
+                const response = await fetch('{% url "cctv:rtsp_available_objects" %}');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    availableObjects = data.available_objects;
+                    renderAvailableObjects();
+                } else {
+                    showAlert('객체 목록 로드 실패', 'error');
+                }
+            } catch (error) {
+                console.error('객체 목록 로드 오류:', error);
+                showAlert('객체 목록 로드 중 오류가 발생했습니다', 'error');
+            }
+        }
+
+        // 카메라 설정 로드
+        async function loadCameraSettings() {
+            try {
+                const cameraElements = document.querySelectorAll('.camera-item');
+                const cameraIds = Array.from(cameraElements).map(el => el.dataset.cameraId);
+                
+                // Django 템플릿에서 카메라 정보 가져오기
+                const cameras = [
+                    {% for camera in cameras %}
+                    {
+                        id: '{{ camera.id }}',
+                        name: '{{ camera.name }}',
+                        rtsp_url: '{{ camera.rtsp_url }}'
+                    }{% if not forloop.last %},{% endif %}
+                    {% endfor %}
+                ];
+                
+                renderCameraSettings(cameras);
+                
+                // 각 카메라의 현재 설정 로드
+                for (const camera of cameras) {
+                    await loadCameraConfig(camera.id);
+                }
+            } catch (error) {
+                console.error('카메라 설정 로드 오류:', error);
+                showAlert('카메라 설정 로드 중 오류가 발생했습니다', 'error');
+            }
+        }
+
+        // 특정 카메라 설정 로드
+        async function loadCameraConfig(cameraId) {
+            try {
+                const response = await fetch(`/cctv/rtsp/camera/${cameraId}/config/`);
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    currentSettings[cameraId] = data.current_detection_objects;
+                    updateCameraUI(cameraId, data.current_detection_objects);
+                }
+            } catch (error) {
+                console.error(`카메라 ${cameraId} 설정 로드 오류:`, error);
+            }
+        }
+
+        // 사용 가능한 객체 목록 렌더링
+        function renderAvailableObjects() {
+            const container = document.getElementById('available-objects-list');
+            container.innerHTML = '';
+            
+            const grid = document.createElement('div');
+            grid.className = 'object-grid';
+            
+            Object.keys(availableObjects).forEach(korean => {
+                const english = availableObjects[korean];
+                const item = document.createElement('div');
+                item.className = 'object-item';
+                item.innerHTML = `
+                    <div class="object-label">
+                        <strong>${korean}</strong>
+                        <div class="object-description">${english}</div>
+                    </div>
+                `;
+                grid.appendChild(item);
+            });
+            
+            container.appendChild(grid);
+        }
+
+        // 카메라 설정 UI 렌더링
+        function renderCameraSettings(cameras) {
+            const container = document.getElementById('cameras-list');
+            container.innerHTML = '';
+            
+            cameras.forEach(camera => {
+                const cameraDiv = document.createElement('div');
+                cameraDiv.className = 'camera-item';
+                cameraDiv.dataset.cameraId = camera.id;
+                
+                cameraDiv.innerHTML = `
+                    <div class="camera-header">
+                        <div>
+                            <div class="camera-name">${camera.name}</div>
+                            <div class="camera-id">ID: ${camera.id} | ${camera.rtsp_url}</div>
+                        </div>
+                    </div>
+                    <div class="camera-body">
+                        <div class="form-group">
+                            <label class="form-label">감지할 객체 선택</label>
+                            <div class="object-grid" id="objects-${camera.id}">
+                                <!-- 객체 선택 항목들이 여기에 추가됩니다 -->
+                            </div>
+                        </div>
+                        <div class="actions">
+                            <button class="btn success" onclick="saveCameraSettings('${camera.id}')">저장</button>
+                            <button class="btn secondary" onclick="resetCameraToDefault('${camera.id}')">기본값</button>
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(cameraDiv);
+                
+                // 객체 선택 항목 생성
+                renderCameraObjects(camera.id);
+            });
+        }
+
+        // 카메라별 객체 선택 항목 렌더링
+        function renderCameraObjects(cameraId) {
+            const container = document.getElementById(`objects-${cameraId}`);
+            container.innerHTML = '';
+            
+            Object.keys(availableObjects).forEach(korean => {
+                const english = availableObjects[korean];
+                const item = document.createElement('div');
+                item.className = 'object-item';
+                item.onclick = () => toggleObjectSelection(cameraId, korean, item);
+                
+                item.innerHTML = `
+                    <input type="checkbox" class="object-checkbox" id="check-${cameraId}-${korean}">
+                    <div class="object-label">
+                        <strong>${korean}</strong>
+                        <div class="object-description">${english}</div>
+                    </div>
+                `;
+                
+                container.appendChild(item);
+            });
+        }
+
+        // 객체 선택 토글
+        function toggleObjectSelection(cameraId, korean, item) {
+            const checkbox = item.querySelector('.object-checkbox');
+            checkbox.checked = !checkbox.checked;
+            
+            if (checkbox.checked) {
+                item.classList.add('selected');
+            } else {
+                item.classList.remove('selected');
+            }
+        }
+
+        // 카메라 UI 업데이트
+        function updateCameraUI(cameraId, detectionObjects) {
+            Object.keys(detectionObjects).forEach(korean => {
+                const checkbox = document.getElementById(`check-${cameraId}-${korean}`);
+                const item = checkbox?.closest('.object-item');
+                
+                if (checkbox && item) {
+                    checkbox.checked = true;
+                    item.classList.add('selected');
+                }
+            });
+        }
+
+        // 카메라 설정 저장
+        async function saveCameraSettings(cameraId) {
+            try {
+                const selectedObjects = {};
+                const checkboxes = document.querySelectorAll(`#objects-${cameraId} .object-checkbox:checked`);
+                
+                checkboxes.forEach(checkbox => {
+                    const korean = checkbox.id.replace(`check-${cameraId}-`, '');
+                    selectedObjects[korean] = availableObjects[korean];
+                });
+                
+                if (Object.keys(selectedObjects).length === 0) {
+                    showAlert('최소 하나의 객체를 선택해주세요', 'error');
+                    return;
+                }
+                
+                const response = await fetch(`/cctv/rtsp/camera/${cameraId}/objects/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({
+                        detection_objects: selectedObjects
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    showAlert(`카메라 ${cameraId} 설정이 저장되었습니다`, 'success');
+                    currentSettings[cameraId] = selectedObjects;
+                } else {
+                    showAlert(`저장 실패: ${data.message}`, 'error');
+                }
+            } catch (error) {
+                console.error('설정 저장 오류:', error);
+                showAlert('설정 저장 중 오류가 발생했습니다', 'error');
+            }
+        }
+
+        // 카메라를 기본값으로 초기화
+        function resetCameraToDefault(cameraId) {
+            const defaultObjects = {
+                "서 있는 사람": "a standing person",
+                "쓰러진 사람": "a fallen person lying on the ground"
+            };
+            
+            // UI 초기화
+            const checkboxes = document.querySelectorAll(`#objects-${cameraId} .object-checkbox`);
+            const items = document.querySelectorAll(`#objects-${cameraId} .object-item`);
+            
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            
+            items.forEach(item => {
+                item.classList.remove('selected');
+            });
+            
+            // 기본값 선택
+            Object.keys(defaultObjects).forEach(korean => {
+                const checkbox = document.getElementById(`check-${cameraId}-${korean}`);
+                const item = checkbox?.closest('.object-item');
+                
+                if (checkbox && item) {
+                    checkbox.checked = true;
+                    item.classList.add('selected');
+                }
+            });
+        }
+
+        // 모든 카메라에 적용
+        function applyToAll() {
+            // 첫 번째 카메라의 설정을 가져와서 모든 카메라에 적용
+            const firstCameraId = Object.keys(currentSettings)[0];
+            if (!firstCameraId) {
+                showAlert('적용할 설정이 없습니다', 'error');
+                return;
+            }
+            
+            const settingsToApply = currentSettings[firstCameraId];
+            if (!settingsToApply || Object.keys(settingsToApply).length === 0) {
+                showAlert('적용할 설정이 없습니다', 'error');
+                return;
+            }
+            
+            // 모든 카메라에 설정 적용
+            const cameras = document.querySelectorAll('.camera-item');
+            cameras.forEach(camera => {
+                const cameraId = camera.dataset.cameraId;
+                updateCameraUI(cameraId, settingsToApply);
+            });
+            
+            showAlert('모든 카메라에 설정이 적용되었습니다. 저장 버튼을 눌러 적용하세요.', 'info');
+        }
+
+        // 모든 카메라를 기본값으로 초기화
+        function resetAllToDefault() {
+            if (!confirm('모든 카메라를 기본값으로 초기화하시겠습니까?')) {
+                return;
+            }
+            
+            const cameras = document.querySelectorAll('.camera-item');
+            cameras.forEach(camera => {
+                const cameraId = camera.dataset.cameraId;
+                resetCameraToDefault(cameraId);
+            });
+            
+            showAlert('모든 카메라가 기본값으로 초기화되었습니다. 저장 버튼을 눌러 적용하세요.', 'info');
+        }
+
+        // 시스템 재시작
+        async function restartDetector() {
+            if (!confirm('시스템을 재시작하시겠습니까? 잠시 동안 모니터링이 중단됩니다.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('{% url "cctv:rtsp_restart" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    showAlert('시스템이 재시작되었습니다', 'success');
+                } else {
+                    showAlert(`재시작 실패: ${data.message}`, 'error');
+                }
+            } catch (error) {
+                console.error('재시작 오류:', error);
+                showAlert('재시작 중 오류가 발생했습니다', 'error');
+            }
+        }
+
+        // 알림 표시
+        function showAlert(message, type = 'info') {
+            const container = document.getElementById('alert-container');
+            const alert = document.createElement('div');
+            alert.className = `alert ${type}`;
+            alert.textContent = message;
+            
+            container.appendChild(alert);
+            
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+
+        // CSRF 토큰 가져오기
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+    </script>
+</body>
+</html>

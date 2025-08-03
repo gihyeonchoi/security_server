@@ -7,14 +7,46 @@ from django.utils.decorators import method_decorator
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import CameraConfig
+from .models import CameraConfig, Camera, TargetLabel
 from .serializers import CameraConfigSerializer
 from .roboflow_service import pipeline_manager, start_camera_detection, stop_camera_detection, start_all_detection, stop_all_detection, get_detection_status
+from .RTSP_Camera import MultiCameraObjectDetector
 import json
 import asyncio
+import logging
 from asgiref.sync import sync_to_async
 
+logger = logging.getLogger(__name__)
+
 detection_tasks = {}
+
+# 전역 detector 인스턴스
+detector_instance = None
+
+def get_or_create_detector():
+    """Detector 인스턴스 가져오기 또는 생성"""
+    global detector_instance
+    if detector_instance is None:
+        try:
+            cameras = Camera.objects.all()
+            logger.info(f"Creating detector with {cameras.count()} cameras from DB")
+            
+            if cameras.exists():
+                detector_instance = MultiCameraObjectDetector.from_django_config(cameras)
+                logger.info(f"Detector created with {len(detector_instance.camera_configs)} camera configs")
+                logger.info(f"Connected cameras: {len(detector_instance.cameras)}")
+            else:
+                logger.warning("No cameras found in database")
+                detector_instance = None
+        except Exception as e:
+            logger.error(f"Error creating detector: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            detector_instance = None
+    else:
+        logger.info("Using existing detector instance")
+    
+    return detector_instance
 
 def launch_detection_task(camera_id):
     camera = CameraConfig.objects.get(id=camera_id)
@@ -36,8 +68,17 @@ def launch_detection_task(camera_id):
 # HTML 뷰
 def camera_dashboard(request):
     """카메라 대시보드 페이지"""
-    cameras = CameraConfig.objects.all()
-    return render(request, 'dashboard.html', {'cameras': cameras})
+    try:
+        cameras = CameraConfig.objects.all()
+        return render(request, 'dashboard.html', {'cameras': cameras})
+    except Exception as e:
+        from django.http import HttpResponse
+        return HttpResponse(f"Dashboard Error: {str(e)}")
+
+def simple_test(request):
+    """간단한 테스트 페이지"""
+    from django.http import HttpResponse
+    return HttpResponse("Server is working! Django is running correctly.")
 
 def camera_detail(request, camera_id):
     """개별 카메라 상세 페이지"""
@@ -48,6 +89,99 @@ def live_view(request):
     """라이브 모니터링 페이지"""
     cameras = CameraConfig.objects.filter(is_active=True)
     return render(request, 'live_view.html', {'cameras': cameras})
+
+def multi_camera_view(request):
+    """모든 카메라를 한 화면에서 보는 페이지"""
+    cameras = Camera.objects.all()
+    
+    # detector 초기화
+    global detector_instance
+    if detector_instance is None:
+        logger.info("Detector is None, creating new instance...")
+        get_or_create_detector()
+    
+    return render(request, 'cctv/multi_camera.html', {'cameras': cameras})
+
+def reset_detector(request):
+    """Detector 강제 재시작 (디버깅용)"""
+    global detector_instance
+    if detector_instance:
+        try:
+            detector_instance.cleanup()
+        except:
+            pass
+    detector_instance = None
+    
+    # 새로 생성
+    get_or_create_detector()
+    
+    return JsonResponse({'status': 'success', 'message': 'Detector reset completed'})
+
+def single_camera_stream(request, camera_id):
+    """개별 카메라 MJPEG 스트림"""
+    try:
+        detector = get_or_create_detector()
+        if detector is None:
+            logger.error("No detector available for streaming")
+            return JsonResponse({'error': 'No detector available'}, status=500)
+        
+        camera_id = str(camera_id)
+        
+        # 카메라가 실제로 연결되어 있는지 확인
+        if camera_id not in detector.cameras:
+            logger.error(f"Camera {camera_id} not found in detector")
+            return JsonResponse({'error': f'Camera {camera_id} not connected'}, status=404)
+        
+        # 웹 모드가 시작되지 않았다면 시작
+        if not detector.running:
+            logger.info(f"Starting detector for camera {camera_id}")
+            import threading
+            def start_detector():
+                try:
+                    detector.run(web_mode=True)
+                except Exception as e:
+                    logger.error(f"Error running detector: {e}")
+            
+            thread = threading.Thread(target=start_detector)
+            thread.daemon = True
+            thread.start()
+            
+            # 잠시 대기
+            import time
+            time.sleep(2)
+        
+        response = StreamingHttpResponse(
+            detector.generate_mjpeg_stream(camera_id),
+            content_type='multipart/x-mixed-replace; boundary=frame'
+        )
+        response['Cache-Control'] = 'no-cache'
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error in single_camera_stream: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+def camera_status_api(request):
+    """카메라 상태 API"""
+    try:
+        detector = get_or_create_detector()
+        if detector is None:
+            logger.error("Detector is None")
+            return JsonResponse({'error': 'No detector available'}, status=500)
+        
+        logger.info(f"Detector camera_configs: {[(c.camera_id, c.name) for c in detector.camera_configs]}")
+        logger.info(f"Detector cameras keys: {list(detector.cameras.keys())}")
+        
+        status = detector.get_camera_status()
+        logger.info(f"Camera status result: {status}")
+        
+        return JsonResponse({
+            'status': 'success',
+            'cameras': status
+        })
+    except Exception as e:
+        logger.error(f"Error in camera_status_api: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
 
 # Pipeline 기반으로 변경 - 기존 스트림 코드 제거
 # WebSocket을 통해 실시간 감지 결과 전송
