@@ -8,3 +8,5 @@ torch 2.7.1+cu128
 ultralytics
 
 channels
+
+clip (git+https://github.com/openai/CLIP.git)
