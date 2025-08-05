@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+
+{% block title %}
+{% if action == 'create' %}감지 대상 추가{% else %}감지 대상 수정{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .form-container {
+        max-width: 600px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 12px;
+        padding: 30px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    .form-header {
+        text-align: center;
+        margin-bottom: 30px;
+        padding-bottom: 20px;
+        border-bottom: 2px solid #ecf0f1;
+    }
+
+    .form-title {
+        font-size: 28px;
+        font-weight: 600;
+        color: #2c3e50;
+        margin: 0;
+    }
+
+    .form-subtitle {
+        color: #7f8c8d;
+        margin-top: 5px;
+    }
+
+    .camera-info {
+        background: #f8f9fa;
+        border-left: 4px solid #3498db;
+        padding: 15px;
+        margin-bottom: 20px;
+        border-radius: 0 6px 6px 0;
+    }
+
+    .camera-name {
+        font-weight: 600;
+        color: #2c3e50;
+    }
+
+    .camera-location {
+        color: #6c757d;
+        font-size: 14px;
+    }
+
+    .form-group {
+        margin-bottom: 20px;
+    }
+
+    .form-label {
+        display: block;
+        font-weight: 500;
+        color: #34495e;
+        margin-bottom: 8px;
+        font-size: 14px;
+    }
+
+    .form-control {
+        width: 100%;
+        padding: 12px 15px;
+        border: 2px solid #e0e6ed;
+        border-radius: 6px;
+        font-size: 14px;
+        transition: border-color 0.3s, box-shadow 0.3s;
+        box-sizing: border-box;
+    }
+
+    .form-control:focus {
+        outline: none;
+        border-color: #3498db;
+        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+    }
+
+    .form-help {
+        font-size: 12px;
+        color: #95a5a6;
+        margin-top: 5px;
+    }
+
+    .checkbox-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 6px;
+        border: 2px solid #e0e6ed;
+        transition: border-color 0.3s;
+    }
+
+    .checkbox-group:has(input:checked) {
+        border-color: #e74c3c;
+        background: #fff5f5;
+    }
+
+    .checkbox-input {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+    }
+
+    .checkbox-label {
+        flex: 1;
+        cursor: pointer;
+        margin: 0;
+        font-weight: 500;
+        color: #2c3e50;
+    }
+
+    .alert-badge {
+        background: #e74c3c;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+
+    .btn-group {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 2px solid #ecf0f1;
+    }
+
+    .btn {
+        padding: 12px 24px;
+        border: none;
+        border-radius: 6px;
+        font-weight: 500;
+        text-decoration: none;
+        cursor: pointer;
+        transition: all 0.3s;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+    }
+
+    .btn-primary {
+        background: #3498db;
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: #2980b9;
+        transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+        background: #95a5a6;
+        color: white;
+    }
+
+    .btn-secondary:hover {
+        background: #7f8c8d;
+        transform: translateY(-1px);
+    }
+
+    .examples-section {
+        background: #f8f9fa;
+        border: 2px dashed #dee2e6;
+        border-radius: 8px;
+        padding: 20px;
+        margin-top: 15px;
+    }
+
+    .examples-title {
+        font-weight: 500;
+        color: #6c757d;
+        margin-bottom: 10px;
+    }
+
+    .example-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .example-tag {
+        background: white;
+        border: 1px solid #ced4da;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        color: #495057;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .example-tag:hover {
+        background: #3498db;
+        color: white;
+        border-color: #3498db;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <div class="form-header">
+        <h1 class="form-title">
+            {% if action == 'create' %}
+                🎯 감지 대상 추가
+            {% else %}
+                ✏️ 감지 대상 수정
+            {% endif %}
+        </h1>
+        <p class="form-subtitle">
+            {% if action == 'create' %}
+                "{{ camera.name }}" 카메라에 새로운 감지 대상을 추가합니다
+            {% else %}
+                "{{ target_label.display_name }}" 감지 대상의 정보를 수정합니다
+            {% endif %}
+        </p>
+    </div>
+
+    <div class="camera-info">
+        <div class="camera-name">📹 {{ camera.name }}</div>
+        <div class="camera-location">📍 {{ camera.location }}</div>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        
+        <div class="form-group">
+            <label for="display_name" class="form-label">📝 표시 이름 *</label>
+            <input 
+                type="text" 
+                id="display_name" 
+                name="display_name" 
+                class="form-control" 
+                value="{% if target_label %}{{ target_label.display_name }}{% endif %}"
+                placeholder="예: 사람"
+                required
+            >
+            <div class="form-help">화면에 표시될 감지 대상의 이름을 입력하세요</div>
+        </div>
+
+        <div class="form-group">
+            <label for="label_name" class="form-label">🔍 객체 탐지 토큰 *</label>
+            <input 
+                type="text" 
+                id="label_name" 
+                name="label_name" 
+                class="form-control" 
+                value="{% if target_label %}{{ target_label.label_name }}{% endif %}"
+                placeholder="예: person"
+                required
+            >
+            <div class="form-help">AI 모델이 인식할 객체 탐지용 자연어 토큰을 입력하세요</div>
+            
+            <div class="examples-section">
+                <div class="examples-title">💡 자주 사용되는 예시</div>
+                <div class="example-tags">
+                    <span class="example-tag" onclick="setLabelName('person')">person (사람)</span>
+                    <span class="example-tag" onclick="setLabelName('car')">car (자동차)</span>
+                    <span class="example-tag" onclick="setLabelName('bicycle')">bicycle (자전거)</span>
+                    <span class="example-tag" onclick="setLabelName('motorcycle')">motorcycle (오토바이)</span>
+                    <span class="example-tag" onclick="setLabelName('dog')">dog (개)</span>
+                    <span class="example-tag" onclick="setLabelName('cat')">cat (고양이)</span>
+                    <span class="example-tag" onclick="setLabelName('backpack')">backpack (배낭)</span>
+                    <span class="example-tag" onclick="setLabelName('umbrella')">umbrella (우산)</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">🚨 경고 설정</label>
+            <div class="checkbox-group">
+                <input 
+                    type="checkbox" 
+                    id="has_alert" 
+                    name="has_alert" 
+                    class="checkbox-input"
+                    {% if target_label.has_alert %}checked{% endif %}
+                >
+                <label for="has_alert" class="checkbox-label">
+                    이 객체가 감지되면 경고 알림 표시
+                    <span class="alert-badge">경고</span>
+                </label>
+            </div>
+            <div class="form-help">
+                체크하면 해당 객체가 감지될 때 시스템에서 경고 표시를 합니다
+            </div>
+        </div>
+
+        <div class="btn-group">
+            <button type="submit" class="btn btn-primary">
+                {% if action == 'create' %}
+                    ✅ 감지 대상 추가
+                {% else %}
+                    💾 변경사항 저장
+                {% endif %}
+            </button>
+            <a href="{% url 'cctv:index' %}" class="btn btn-secondary">
+                ↩️ 취소
+            </a>
+        </div>
+    </form>
+</div>
+
+<script>
+function setLabelName(value) {
+    const input = document.getElementById('label_name');
+    input.value = value;
+    input.focus();
+    
+    // 표시 이름이 비어있으면 자동으로 채워주기
+    const displayNameInput = document.getElementById('display_name');
+    if (!displayNameInput.value.trim()) {
+        const displayNames = {
+            'person': '사람',
+            'car': '자동차',
+            'bicycle': '자전거', 
+            'motorcycle': '오토바이',
+            'dog': '개',
+            'cat': '고양이',
+            'backpack': '배낭',
+            'umbrella': '우산'
+        };
+        displayNameInput.value = displayNames[value] || value;
+    }
+}
+</script>
+{% endblock %}

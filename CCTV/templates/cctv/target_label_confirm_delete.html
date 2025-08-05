@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}감지 대상 삭제 확인{% endblock %}
+
+{% block extra_css %}
+<style>
+    .delete-container {
+        max-width: 500px;
+        margin: 50px auto;
+        background: white;
+        border-radius: 12px;
+        padding: 30px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        text-align: center;
+    }
+
+    .delete-icon {
+        font-size: 64px;
+        color: #e74c3c;
+        margin-bottom: 20px;
+    }
+
+    .delete-title {
+        font-size: 24px;
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 15px;
+    }
+
+    .delete-message {
+        color: #7f8c8d;
+        margin-bottom: 20px;
+        line-height: 1.6;
+    }
+
+    .target-label-info {
+        background: #f8f9fa;
+        border-left: 4px solid #e74c3c;
+        padding: 15px;
+        margin: 20px 0;
+        text-align: left;
+        border-radius: 0 6px 6px 0;
+    }
+
+    .camera-info {
+        color: #6c757d;
+        font-size: 14px;
+        margin-bottom: 10px;
+    }
+
+    .label-name {
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 5px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .label-desc {
+        color: #495057;
+        font-size: 14px;
+        font-family: monospace;
+        background: white;
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px solid #ced4da;
+    }
+
+    .alert-badge {
+        background: #e74c3c;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+
+    .btn-group {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+        margin-top: 30px;
+    }
+
+    .btn {
+        padding: 12px 24px;
+        border: none;
+        border-radius: 6px;
+        font-weight: 500;
+        text-decoration: none;
+        cursor: pointer;
+        transition: all 0.3s;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+    }
+
+    .btn-danger {
+        background: #e74c3c;
+        color: white;
+    }
+
+    .btn-danger:hover {
+        background: #c0392b;
+        transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+        background: #95a5a6;
+        color: white;
+    }
+
+    .btn-secondary:hover {
+        background: #7f8c8d;
+        transform: translateY(-1px);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="delete-container">
+    <div class="delete-icon">🗑️</div>
+    <h1 class="delete-title">감지 대상 삭제 확인</h1>
+    <p class="delete-message">
+        정말로 이 감지 대상을 삭제하시겠습니까?<br>
+        삭제된 데이터는 복구할 수 없습니다.
+    </p>
+
+    <div class="target-label-info">
+        <div class="camera-info">
+            📹 {{ target_label.camera.name }} ({{ target_label.camera.location }})
+        </div>
+        <div class="label-name">
+            🎯 {{ target_label.display_name }}
+            {% if target_label.has_alert %}
+                <span class="alert-badge">경고</span>
+            {% endif %}
+        </div>
+        <div class="label-desc">{{ target_label.label_name }}</div>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <div class="btn-group">
+            <button type="submit" class="btn btn-danger">
+                🗑️ 삭제하기
+            </button>
+            <a href="{% url 'cctv:index' %}" class="btn btn-secondary">
+                ↩️ 취소
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}
