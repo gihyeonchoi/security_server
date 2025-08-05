@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block title %}카메라 삭제 확인{% endblock %}
+
+{% block extra_css %}
+<style>
+    .delete-container {
+        max-width: 500px;
+        margin: 50px auto;
+        background: white;
+        border-radius: 12px;
+        padding: 30px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        text-align: center;
+    }
+
+    .delete-icon {
+        font-size: 64px;
+        color: #e74c3c;
+        margin-bottom: 20px;
+    }
+
+    .delete-title {
+        font-size: 24px;
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 15px;
+    }
+
+    .delete-message {
+        color: #7f8c8d;
+        margin-bottom: 20px;
+        line-height: 1.6;
+    }
+
+    .camera-info {
+        background: #f8f9fa;
+        border-left: 4px solid #e74c3c;
+        padding: 15px;
+        margin: 20px 0;
+        text-align: left;
+        border-radius: 0 6px 6px 0;
+    }
+
+    .camera-name {
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 5px;
+    }
+
+    .camera-location {
+        color: #6c757d;
+        font-size: 14px;
+        margin-bottom: 8px;
+    }
+
+    .camera-url {
+        font-family: monospace;
+        font-size: 12px;
+        color: #495057;
+        word-break: break-all;
+    }
+
+    .warning-box {
+        background: #fff3cd;
+        border: 1px solid #ffeeba;
+        border-radius: 6px;
+        padding: 15px;
+        margin: 20px 0;
+        color: #856404;
+    }
+
+    .warning-title {
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+
+    .btn-group {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+        margin-top: 30px;
+    }
+
+    .btn {
+        padding: 12px 24px;
+        border: none;
+        border-radius: 6px;
+        font-weight: 500;
+        text-decoration: none;
+        cursor: pointer;
+        transition: all 0.3s;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+    }
+
+    .btn-danger {
+        background: #e74c3c;
+        color: white;
+    }
+
+    .btn-danger:hover {
+        background: #c0392b;
+        transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+        background: #95a5a6;
+        color: white;
+    }
+
+    .btn-secondary:hover {
+        background: #7f8c8d;
+        transform: translateY(-1px);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="delete-container">
+    <div class="delete-icon">🗑️</div>
+    <h1 class="delete-title">카메라 삭제 확인</h1>
+    <p class="delete-message">
+        정말로 이 카메라를 삭제하시겠습니까?<br>
+        삭제된 데이터는 복구할 수 없습니다.
+    </p>
+
+    <div class="camera-info">
+        <div class="camera-name">📹 {{ camera.name }}</div>
+        <div class="camera-location">📍 {{ camera.location }}</div>
+        <div class="camera-url">🔗 {{ camera.rtsp_url }}</div>
+    </div>
+
+    {% if camera.target_labels.all %}
+    <div class="warning-box">
+        <div class="warning-title">⚠️ 주의사항</div>
+        이 카메라에 등록된 {{ camera.target_labels.count }}개의 감지 대상도 함께 삭제됩니다:
+        <ul style="margin-top: 10px; text-align: left;">
+            {% for label in camera.target_labels.all %}
+            <li>{{ label.display_name }} ({{ label.label_name }})</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <form method="post">
+        {% csrf_token %}
+        <div class="btn-group">
+            <button type="submit" class="btn btn-danger">
+                🗑️ 삭제하기
+            </button>
+            <a href="{% url 'cctv:index' %}" class="btn btn-secondary">
+                ↩️ 취소
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

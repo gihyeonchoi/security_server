@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+
+{% block title %}
+{% if action == 'create' %}카메라 추가{% else %}카메라 수정{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .form-container {
+        max-width: 600px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 12px;
+        padding: 30px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    .form-header {
+        text-align: center;
+        margin-bottom: 30px;
+        padding-bottom: 20px;
+        border-bottom: 2px solid #ecf0f1;
+    }
+
+    .form-title {
+        font-size: 28px;
+        font-weight: 600;
+        color: #2c3e50;
+        margin: 0;
+    }
+
+    .form-subtitle {
+        color: #7f8c8d;
+        margin-top: 5px;
+    }
+
+    .form-group {
+        margin-bottom: 20px;
+    }
+
+    .form-label {
+        display: block;
+        font-weight: 500;
+        color: #34495e;
+        margin-bottom: 8px;
+        font-size: 14px;
+    }
+
+    .form-control {
+        width: 100%;
+        padding: 12px 15px;
+        border: 2px solid #e0e6ed;
+        border-radius: 6px;
+        font-size: 14px;
+        transition: border-color 0.3s, box-shadow 0.3s;
+        box-sizing: border-box;
+    }
+
+    .form-control:focus {
+        outline: none;
+        border-color: #3498db;
+        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+    }
+
+    .form-help {
+        font-size: 12px;
+        color: #95a5a6;
+        margin-top: 5px;
+    }
+
+    .btn-group {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 2px solid #ecf0f1;
+    }
+
+    .btn {
+        padding: 12px 24px;
+        border: none;
+        border-radius: 6px;
+        font-weight: 500;
+        text-decoration: none;
+        cursor: pointer;
+        transition: all 0.3s;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+    }
+
+    .btn-primary {
+        background: #3498db;
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: #2980b9;
+        transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+        background: #95a5a6;
+        color: white;
+    }
+
+    .btn-secondary:hover {
+        background: #7f8c8d;
+        transform: translateY(-1px);
+    }
+
+    .preview-section {
+        background: #f8f9fa;
+        border: 2px dashed #dee2e6;
+        border-radius: 8px;
+        padding: 20px;
+        text-align: center;
+        margin-top: 20px;
+    }
+
+    .preview-title {
+        font-weight: 500;
+        color: #6c757d;
+        margin-bottom: 10px;
+    }
+
+    .preview-url {
+        font-family: monospace;
+        font-size: 12px;
+        color: #495057;
+        background: white;
+        padding: 10px;
+        border-radius: 4px;
+        word-break: break-all;
+        border: 1px solid #ced4da;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <div class="form-header">
+        <h1 class="form-title">
+            {% if action == 'create' %}
+                📹 새 카메라 추가
+            {% else %}
+                ✏️ 카메라 정보 수정
+            {% endif %}
+        </h1>
+        <p class="form-subtitle">
+            {% if action == 'create' %}
+                RTSP 스트림을 지원하는 IP 카메라를 추가합니다
+            {% else %}
+                "{{ camera.name }}" 카메라의 정보를 수정합니다
+            {% endif %}
+        </p>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        
+        <div class="form-group">
+            <label for="name" class="form-label">📝 카메라 이름 *</label>
+            <input 
+                type="text" 
+                id="name" 
+                name="name" 
+                class="form-control" 
+                value="{% if camera %}{{ camera.name }}{% endif %}"
+                placeholder="예: 현관 카메라"
+                required
+            >
+            <div class="form-help">카메라를 식별할 수 있는 이름을 입력하세요</div>
+        </div>
+
+        <div class="form-group">
+            <label for="location" class="form-label">📍 설치 위치 *</label>
+            <input 
+                type="text" 
+                id="location" 
+                name="location" 
+                class="form-control" 
+                value="{% if camera %}{{ camera.location }}{% endif %}"
+                placeholder="예: 1층 현관 입구"
+                required
+            >
+            <div class="form-help">카메라가 설치된 물리적 위치를 입력하세요</div>
+        </div>
+
+        <div class="form-group">
+            <label for="rtsp_url" class="form-label">🔗 RTSP URL *</label>
+            <input 
+                type="url" 
+                id="rtsp_url" 
+                name="rtsp_url" 
+                class="form-control" 
+                value="{% if camera %}{{ camera.rtsp_url }}{% endif %}"
+                placeholder="rtsp://username:password@192.168.1.100:554/stream1"
+                required
+            >
+            <div class="form-help">
+                카메라의 RTSP 스트림 주소를 입력하세요<br>
+                형식: rtsp://[사용자명:비밀번호@]IP주소:포트/스트림경로
+            </div>
+        </div>
+
+        {% if camera %}
+        <div class="preview-section">
+            <div class="preview-title">현재 RTSP URL</div>
+            <div class="preview-url">{{ camera.rtsp_url }}</div>
+        </div>
+        {% endif %}
+
+        <div class="btn-group">
+            <button type="submit" class="btn btn-primary">
+                {% if action == 'create' %}
+                    ✅ 카메라 추가
+                {% else %}
+                    💾 변경사항 저장
+                {% endif %}
+            </button>
+            <a href="{% url 'cctv:index' %}" class="btn btn-secondary">
+                ↩️ 취소
+            </a>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const rtspInput = document.getElementById('rtsp_url');
+    
+    rtspInput.addEventListener('blur', function() {
+        const url = this.value;
+        if (url && !url.startsWith('rtsp://')) {
+            this.style.borderColor = '#e74c3c';
+            this.style.boxShadow = '0 0 0 3px rgba(231, 76, 60, 0.1)';
+        } else {
+            this.style.borderColor = '#e0e6ed';
+            this.style.boxShadow = 'none';
+        }
+    });
+});
+</script>
+{% endblock %}
