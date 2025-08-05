@@ -175,6 +175,73 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        
+        /* AI 탐지 토스트 알림 스타일 */
+        .toast-alert {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            background: #fff;
+            border-left: 4px solid #e74c3c;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            animation: slideInRight 0.3s ease-out;
+            max-width: 400px;
+            min-width: 300px;
+        }
+        
+        .toast-content {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            gap: 12px;
+        }
+        
+        .toast-icon {
+            font-size: 24px;
+            flex-shrink: 0;
+        }
+        
+        .toast-text {
+            flex: 1;
+        }
+        
+        .toast-title {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 4px;
+        }
+        
+        .toast-message {
+            color: #7f8c8d;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        
+        .toast-close {
+            cursor: pointer;
+            color: #95a5a6;
+            font-size: 20px;
+            font-weight: bold;
+            padding: 0 5px;
+            transition: color 0.3s;
+        }
+        
+        .toast-close:hover {
+            color: #e74c3c;
+        }
+        
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
     </style>
     
     {% block extra_css %}
@@ -283,6 +350,137 @@
                 setTimeout(() => msg.remove(), 500);
             });
         }, 5000);
+        
+        // AI 탐지 실시간 알림 시스템 (SSE)
+        let eventSource = null;
+        
+        function initDetectionAlerts() {
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            eventSource = new EventSource('/cctv/alerts/stream/');
+            
+            eventSource.onopen = function(event) {
+                console.log('🔔 AI 탐지 알림 연결됨');
+            };
+            
+            eventSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleDetectionAlert(data);
+                } catch (e) {
+                    console.error('알림 데이터 파싱 오류:', e);
+                }
+            };
+            
+            eventSource.onerror = function(event) {
+                console.error('❌ AI 탐지 알림 연결 오류:', event);
+                // 5초 후 재연결 시도
+                setTimeout(() => {
+                    if (eventSource.readyState === EventSource.CLOSED) {
+                        initDetectionAlerts();
+                    }
+                }, 5000);
+            };
+        }
+        
+        function handleDetectionAlert(data) {
+            if (data.type === 'detection_alert') {
+                showDetectionNotification(data);
+                playAlertSound();
+            } else if (data.type === 'connected') {
+                console.log('✅ ' + data.message);
+            } else if (data.type === 'heartbeat') {
+                // 하트비트는 조용히 처리
+                console.debug('💓 하트비트');
+            }
+        }
+        
+        function showDetectionNotification(alert) {
+            // 브라우저 알림 권한 요청
+            if (Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+            
+            // 브라우저 알림 표시
+            if (Notification.permission === 'granted') {
+                const notification = new Notification('🚨 AI 객체 탐지', {
+                    body: `${alert.camera_location}에서 ${alert.detected_object} ${alert.object_count}개 탐지됨`,
+                    icon: '/static/favicon.ico',
+                    badge: '/static/favicon.ico',
+                    tag: 'detection-alert',
+                    renotify: true
+                });
+                
+                notification.onclick = function() {
+                    window.focus();
+                    notification.close();
+                };
+                
+                // 5초 후 자동 닫기
+                setTimeout(() => notification.close(), 5000);
+            }
+            
+            // 페이지 내 토스트 알림
+            showToastAlert(alert);
+        }
+        
+        function showToastAlert(alert) {
+            // 기존 토스트 제거
+            const existingToast = document.querySelector('.toast-alert');
+            if (existingToast) {
+                existingToast.remove();
+            }
+            
+            // 새 토스트 생성
+            const toast = document.createElement('div');
+            toast.className = 'toast-alert';
+            toast.innerHTML = `
+                <div class="toast-content">
+                    <div class="toast-icon">🚨</div>
+                    <div class="toast-text">
+                        <div class="toast-title">AI 객체 탐지</div>
+                        <div class="toast-message">${alert.camera_location}에서 ${alert.detected_object} ${alert.object_count}개 탐지됨</div>
+                    </div>
+                    <div class="toast-close" onclick="this.parentElement.parentElement.remove()">×</div>
+                </div>
+            `;
+            
+            document.body.appendChild(toast);
+            
+            // 8초 후 자동 제거
+            setTimeout(() => {
+                if (toast.parentElement) {
+                    toast.remove();
+                }
+            }, 8000);
+        }
+        
+        function playAlertSound() {
+            // 브라우저 지원 시 알림 소리 재생
+            try {
+                const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmUdBD2U2/PJdSQFJnvC7+OWSwkOVLTn77BdGAg+ltryxnkpBSl+z+jPdSMGZ');
+                audio.volume = 0.3;
+                audio.play().catch(() => {
+                    // 자동 재생 정책으로 인한 오류는 무시
+                });
+            } catch (e) {
+                // 오디오 재생 실패는 무시
+            }
+        }
+        
+        // 페이지 로드 시 알림 시스템 초기화
+        document.addEventListener('DOMContentLoaded', function() {
+            initDetectionAlerts();
+        });
+        
+        // 페이지 언로드 시 연결 종료
+        window.addEventListener('beforeunload', function() {
+            if (eventSource) {
+                eventSource.close();
+            }
+        });
     </script>
     
     {% block extra_js %}

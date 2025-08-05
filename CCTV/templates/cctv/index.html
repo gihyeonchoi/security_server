@@ -120,6 +120,13 @@
         color: #2c3e50;
         margin: 0;
     }
+    
+    .camera-id {
+        font-size: 14px;
+        font-weight: 400;
+        color: #7f8c8d;
+        font-family: monospace;
+    }
 
     .camera-location {
         color: #7f8c8d;
@@ -259,10 +266,13 @@
     <div class="camera-card">
         <div class="camera-header">
             <div>
-                <h3 class="camera-title">{{ camera.name }}</h3>
+                <h3 class="camera-title">{{ camera.name }} <span class="camera-id">(ID: {{ camera.id }})</span></h3>
                 <p class="camera-location">📍 {{ camera.location }}</p>
             </div>
             <div class="camera-actions">
+                <a href="{% url 'cctv:camera_stream' camera.id %}" class="btn btn-success btn-sm" target="_blank" onclick="openCameraStream({{ camera.id }}, '{{ camera.name }}')">
+                    📹 카메라 보기
+                </a>
                 <a href="{% url 'cctv:camera_edit' camera.id %}" class="btn btn-warning btn-sm">
                     수정
                 </a>
@@ -323,4 +333,84 @@
     </a>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openCameraStream(cameraId, cameraName) {
+    // 새 창 크기 설정
+    const width = 800;
+    const height = 600;
+    const left = (screen.width - width) / 2;
+    const top = (screen.height - height) / 2;
+    
+    // 새 창 옵션
+    const windowFeatures = `
+        width=${width},
+        height=${height},
+        left=${left},
+        top=${top},
+        resizable=yes,
+        scrollbars=no,
+        toolbar=no,
+        menubar=no,
+        location=no,
+        directories=no,
+        status=no
+    `;
+    
+    // 새 창 열기
+    const streamWindow = window.open(
+        `/cctv/camera/${cameraId}/stream/`,
+        `camera_stream_${cameraId}`,
+        windowFeatures
+    );
+    
+    // 새 창이 열렸을 때 제목 설정
+    if (streamWindow) {
+        streamWindow.document.title = `${cameraName} - 실시간 스트림`;
+        
+        // 새 창이 로드된 후 스타일 적용
+        streamWindow.onload = function() {
+            const style = streamWindow.document.createElement('style');
+            style.textContent = `
+                body {
+                    margin: 0;
+                    padding: 0;
+                    background: #000;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    min-height: 100vh;
+                    font-family: Arial, sans-serif;
+                }
+                img {
+                    max-width: 100%;
+                    max-height: 100vh;
+                    object-fit: contain;
+                }
+                .stream-info {
+                    position: absolute;
+                    top: 10px;
+                    left: 10px;
+                    background: rgba(0,0,0,0.7);
+                    color: white;
+                    padding: 8px 12px;
+                    border-radius: 4px;
+                    font-size: 14px;
+                }
+            `;
+            streamWindow.document.head.appendChild(style);
+            
+            // 스트림 정보 추가
+            const info = streamWindow.document.createElement('div');
+            info.className = 'stream-info';
+            info.innerHTML = `📹 ${cameraName} (ID: ${cameraId})`;
+            streamWindow.document.body.appendChild(info);
+        };
+    }
+    
+    return false; // 기본 링크 동작 방지
+}
+</script>
 {% endblock %}
