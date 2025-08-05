@@ -1,0 +1,161 @@
+{% extends 'map/base.html' %}
+
+{% block title %}
+    {% if object %}층 수정{% else %}층 추가{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h4>{% if object %}층 수정{% else %}새 층 추가{% endif %}</h4>
+                </div>
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.location.id_for_label }}" class="form-label">{{ form.location.label }}</label>
+                                    {{ form.location }}
+                                    {% if form.location.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.location.errors %}
+                                                <small>{{ error }}</small>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.floor_number.id_for_label }}" class="form-label">{{ form.floor_number.label }}</label>
+                                    {{ form.floor_number }}
+                                    {% if form.floor_number.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.floor_number.errors %}
+                                                <small>{{ error }}</small>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    <div class="form-text">지하층은 음수로 입력하세요 (예: -1, -2)</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.name.id_for_label }}" class="form-label">{{ form.name.label }}</label>
+                            {{ form.name }}
+                            {% if form.name.errors %}
+                                <div class="text-danger">
+                                    {% for error in form.name.errors %}
+                                        <small>{{ error }}</small>
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.map_image.id_for_label }}" class="form-label">{{ form.map_image.label }}</label>
+                            {{ form.map_image }}
+                            {% if form.map_image.errors %}
+                                <div class="text-danger">
+                                    {% for error in form.map_image.errors %}
+                                        <small>{{ error }}</small>
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                            {% if object and object.map_image %}
+                                <div class="mt-2">
+                                    <p class="form-text">현재 이미지:</p>
+                                    <img src="{{ object.map_image.url }}" alt="현재 지도" style="max-width: 200px; height: auto;">
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <hr>
+                        <h5>GPS 좌표 설정 (선택사항)</h5>
+                        <p class="text-muted">실시간 위치 추적을 위한 GPS 좌표 범위를 설정하세요.</p>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.top_left_lat.id_for_label }}" class="form-label">{{ form.top_left_lat.label }}</label>
+                                    {{ form.top_left_lat }}
+                                    {% if form.top_left_lat.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.top_left_lat.errors %}
+                                                <small>{{ error }}</small>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.top_left_lon.id_for_label }}" class="form-label">{{ form.top_left_lon.label }}</label>
+                                    {{ form.top_left_lon }}
+                                    {% if form.top_left_lon.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.top_left_lon.errors %}
+                                                <small>{{ error }}</small>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.bottom_right_lat.id_for_label }}" class="form-label">{{ form.bottom_right_lat.label }}</label>
+                                    {{ form.bottom_right_lat }}
+                                    {% if form.bottom_right_lat.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.bottom_right_lat.errors %}
+                                                <small>{{ error }}</small>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.bottom_right_lon.id_for_label }}" class="form-label">{{ form.bottom_right_lon.label }}</label>
+                                    {{ form.bottom_right_lon }}
+                                    {% if form.bottom_right_lon.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.bottom_right_lon.errors %}
+                                                <small>{{ error }}</small>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        {% if form.non_field_errors %}
+                            <div class="alert alert-danger">
+                                {% for error in form.non_field_errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                {% if object %}수정하기{% else %}추가하기{% endif %}
+                            </button>
+                            <a href="{% url 'map:floor_list' %}" class="btn btn-secondary">취소</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

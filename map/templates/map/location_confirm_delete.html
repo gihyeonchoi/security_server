@@ -1,0 +1,53 @@
+{% extends 'map/base.html' %}
+
+{% block title %}위치 삭제 확인{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h4>위치 삭제 확인</h4>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-warning">
+                        <strong>주의:</strong> 다음 위치를 삭제하시겠습니까?
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5>{{ object.name }}</h5>
+                        {% if object.address %}
+                            <p class="text-muted">{{ object.address }}</p>
+                        {% endif %}
+                        {% if object.description %}
+                            <p>{{ object.description }}</p>
+                        {% endif %}
+                    </div>
+
+                    {% if object.floors.exists %}
+                    <div class="alert alert-danger">
+                        <strong>경고:</strong> 이 위치에는 {{ object.floors.count }}개의 층이 등록되어 있습니다. 
+                        위치를 삭제하면 연관된 모든 층과 카메라 위치 정보도 함께 삭제됩니다.
+                        
+                        <ul class="mt-2 mb-0">
+                            {% for floor in object.floors.all %}
+                            <li>{{ floor.name }} (카메라 {{ floor.camera_positions.count }}개)</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-danger">삭제하기</button>
+                            <a href="{% url 'map:location_list' %}" class="btn btn-secondary">취소</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,8 +1,17 @@
 # map/views.py
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404, redirect
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt # csrf 보호 비활성화를 위해 import
-from CCTV.models import Camera # CCTV 앱의 Camera 모델을 가져옵니다.
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib import messages
+from django.urls import reverse_lazy
+from django.views.generic import ListView, CreateView, UpdateView, DeleteView
+from django.contrib.auth.decorators import login_required
+from django.utils.decorators import method_decorator
+from django.views.decorators.http import require_http_methods
+
+from CCTV.models import Camera
+from .models import Location, Floor, CameraPosition
+from .forms import LocationForm, FloorForm, CameraPositionForm, CameraPositionUpdateForm
 import json
 
 # Flask의 전역 변수처럼, 서버가 실행되는 동안 위치를 메모리에 저장합니다.
@@ -46,25 +55,239 @@ def location_api(request):
         return JsonResponse(latest_location)
     
 def map_view(request):
-    # DB에서 특정 카메라 정보를 가져옵니다.
-    try:
-        # 이름이 'camera1'인 객체를 찾습니다.
-        camera_floor1 = Camera.objects.get(name='테스트카메라1') 
-    except Camera.DoesNotExist:
-        # 만약 'camera1'이라는 이름의 데이터가 없으면 None을 할당합니다.
-        camera_floor1 = None
-
-    # 나중에 2층 카메라도 추가할 것을 대비해 미리 작성합니다.
-    try:
-        camera_floor2 = Camera.objects.get(name='camera2')
-    except Camera.DoesNotExist:
-        camera_floor2 = None
-
-    # 템플릿에 전달할 데이터 'context'를 만듭니다.
+    """동적 지도 보기 - 데이터베이스에서 위치, 층, 카메라 정보를 가져옴"""
+    # 기본 위치 선택 (첫 번째 위치 또는 요청 파라미터로 지정)
+    location_id = request.GET.get('location')
+    if location_id:
+        location = get_object_or_404(Location, id=location_id)
+    else:
+        location = Location.objects.first()
+    
+    if not location:
+        # 위치가 없으면 빈 지도 표시
+        context = {
+            'location': None,
+            'floors': [],
+            'locations': Location.objects.all(),
+            'error': '등록된 위치가 없습니다. 관리자에서 위치를 추가해주세요.'
+        }
+        return render(request, 'map/map.html', context)
+    
+    # 해당 위치의 층들과 카메라 위치 정보 가져오기
+    floors = Floor.objects.filter(location=location).prefetch_related(
+        'camera_positions__camera'
+    ).order_by('floor_number')
+    
+    # 전체 위치 목록 (드롭다운용)
+    locations = Location.objects.all()
+    
     context = {
-        'camera1': camera_floor1,
-        'camera2': camera_floor2,
+        'location': location,
+        'floors': floors,
+        'locations': locations,
     }
     
-    # context를 템플릿으로 전달하며 페이지를 렌더링합니다.
     return render(request, 'map/map.html', context)
+
+
+# ==================== CRUD Views ====================
+
+@method_decorator(login_required, name='dispatch')
+class LocationListView(ListView):
+    model = Location
+    template_name = 'map/location_list.html'
+    context_object_name = 'locations'
+    paginate_by = 10
+
+
+@method_decorator(login_required, name='dispatch')
+class LocationCreateView(CreateView):
+    model = Location
+    form_class = LocationForm
+    template_name = 'map/location_form.html'
+    success_url = reverse_lazy('map:location_list')
+    
+    def form_valid(self, form):
+        messages.success(self.request, f"위치 '{form.instance.name}'이 생성되었습니다.")
+        return super().form_valid(form)
+
+
+@method_decorator(login_required, name='dispatch')
+class LocationUpdateView(UpdateView):
+    model = Location
+    form_class = LocationForm
+    template_name = 'map/location_form.html'
+    success_url = reverse_lazy('map:location_list')
+    
+    def form_valid(self, form):
+        messages.success(self.request, f"위치 '{form.instance.name}'이 수정되었습니다.")
+        return super().form_valid(form)
+
+
+@method_decorator(login_required, name='dispatch')
+class LocationDeleteView(DeleteView):
+    model = Location
+    template_name = 'map/location_confirm_delete.html'
+    success_url = reverse_lazy('map:location_list')
+    
+    def delete(self, request, *args, **kwargs):
+        obj = self.get_object()
+        messages.success(request, f"위치 '{obj.name}'이 삭제되었습니다.")
+        return super().delete(request, *args, **kwargs)
+
+
+@method_decorator(login_required, name='dispatch')
+class FloorListView(ListView):
+    model = Floor
+    template_name = 'map/floor_list.html'
+    context_object_name = 'floors'
+    paginate_by = 10
+    
+    def get_queryset(self):
+        return Floor.objects.select_related('location').order_by('location', 'floor_number')
+
+
+@method_decorator(login_required, name='dispatch')
+class FloorCreateView(CreateView):
+    model = Floor
+    form_class = FloorForm
+    template_name = 'map/floor_form.html'
+    success_url = reverse_lazy('map:floor_list')
+    
+    def form_valid(self, form):
+        messages.success(self.request, f"층 '{form.instance}'이 생성되었습니다.")
+        return super().form_valid(form)
+
+
+@method_decorator(login_required, name='dispatch')
+class FloorUpdateView(UpdateView):
+    model = Floor
+    form_class = FloorForm
+    template_name = 'map/floor_form.html'
+    success_url = reverse_lazy('map:floor_list')
+    
+    def form_valid(self, form):
+        messages.success(self.request, f"층 '{form.instance}'이 수정되었습니다.")
+        return super().form_valid(form)
+
+
+@method_decorator(login_required, name='dispatch')
+class FloorDeleteView(DeleteView):
+    model = Floor
+    template_name = 'map/floor_confirm_delete.html'
+    success_url = reverse_lazy('map:floor_list')
+    
+    def delete(self, request, *args, **kwargs):
+        obj = self.get_object()
+        messages.success(request, f"층 '{obj}'이 삭제되었습니다.")
+        return super().delete(request, *args, **kwargs)
+
+
+@method_decorator(login_required, name='dispatch')
+class CameraPositionListView(ListView):
+    model = CameraPosition
+    template_name = 'map/camera_position_list.html'
+    context_object_name = 'positions'
+    paginate_by = 20
+    
+    def get_queryset(self):
+        return CameraPosition.objects.select_related(
+            'camera', 'floor', 'floor__location'
+        ).order_by('floor__location', 'floor__floor_number', 'camera__name')
+
+
+@method_decorator(login_required, name='dispatch')
+class CameraPositionCreateView(CreateView):
+    model = CameraPosition
+    form_class = CameraPositionForm
+    template_name = 'map/camera_position_form.html'
+    success_url = reverse_lazy('map:camera_position_list')
+    
+    def form_valid(self, form):
+        messages.success(self.request, f"카메라 위치 '{form.instance}'가 생성되었습니다.")
+        return super().form_valid(form)
+
+
+@method_decorator(login_required, name='dispatch')
+class CameraPositionUpdateView(UpdateView):
+    model = CameraPosition
+    form_class = CameraPositionForm
+    template_name = 'map/camera_position_form.html'
+    success_url = reverse_lazy('map:camera_position_list')
+    
+    def form_valid(self, form):
+        messages.success(self.request, f"카메라 위치 '{form.instance}'가 수정되었습니다.")
+        return super().form_valid(form)
+
+
+@method_decorator(login_required, name='dispatch')
+class CameraPositionDeleteView(DeleteView):
+    model = CameraPosition
+    template_name = 'map/camera_position_confirm_delete.html'
+    success_url = reverse_lazy('map:camera_position_list')
+    
+    def delete(self, request, *args, **kwargs):
+        obj = self.get_object()
+        messages.success(request, f"카메라 위치 '{obj}'가 삭제되었습니다.")
+        return super().delete(request, *args, **kwargs)
+
+
+# ==================== Management Views ====================
+
+@login_required
+def camera_position_manager(request, floor_id):
+    """드래그 앤 드롭으로 카메라 위치 관리"""
+    floor = get_object_or_404(Floor, id=floor_id)
+    positions = CameraPosition.objects.filter(floor=floor, is_active=True).select_related('camera')
+    available_cameras = Camera.objects.exclude(
+        id__in=CameraPosition.objects.values_list('camera_id', flat=True)
+    )
+    
+    context = {
+        'floor': floor,
+        'positions': positions,
+        'available_cameras': available_cameras,
+    }
+    
+    return render(request, 'map/camera_position_manager.html', context)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def update_camera_position(request, position_id):
+    """드래그 앤 드롭으로 카메라 위치 업데이트 (AJAX)"""
+    position = get_object_or_404(CameraPosition, id=position_id)
+    
+    try:
+        data = json.loads(request.body)
+        form = CameraPositionUpdateForm(data)
+        
+        if form.is_valid():
+            position.x_position = form.cleaned_data['x_position']
+            position.y_position = form.cleaned_data['y_position']
+            position.save()
+            
+            return JsonResponse({
+                'status': 'success',
+                'message': f"{position.camera.name} 위치가 업데이트되었습니다.",
+                'position': {
+                    'x': position.x_position,
+                    'y': position.y_position
+                }
+            })
+        else:
+            return JsonResponse({
+                'status': 'error',
+                'message': f"입력 데이터가 올바르지 않습니다: {form.errors}"
+            }, status=400)
+            
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'JSON 데이터 파싱 오류'
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': f'오류가 발생했습니다: {str(e)}'
+        }, status=500)

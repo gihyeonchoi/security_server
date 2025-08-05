@@ -16,6 +16,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
 
 # from RFID import views
 
@@ -26,3 +28,15 @@ urlpatterns = [
     path('CCTV/', include('CCTV.urls')),  # 대문자도 지원
     path('map/', include('map.urls')),
 ]
+
+# 개발 환경에서 정적 파일 서빙
+if settings.DEBUG:
+    # Django의 기본 정적 파일 처리 사용
+    from django.contrib.staticfiles import views
+    from django.urls import re_path
+    urlpatterns += [
+        re_path(r'^static/(?P<path>.*)$', views.serve),
+    ]
+    # 미디어 파일도 서빙 (이미지 업로드용)
+    if hasattr(settings, 'MEDIA_URL') and hasattr(settings, 'MEDIA_ROOT'):
+        urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
