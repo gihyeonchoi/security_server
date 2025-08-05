@@ -1,0 +1,306 @@
+{% extends 'map/base.html' %}
+{% load static %}
+
+{% block title %}카메라 위치 관리 - {{ floor }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'map/css/map_admin.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-9">
+            <div class="card">
+                <div class="card-header">
+                    <h4>{{ floor }} - 카메라 위치 관리</h4>
+                    <small class="text-muted">카메라 아이콘을 드래그하여 위치를 조정하세요</small>
+                </div>
+                <div class="card-body">
+                    <div id="map-container" style="position: relative; max-width: 100%; margin: 0 auto;">
+                        <img src="{{ floor.map_image.url }}" 
+                             id="floor-map" 
+                             alt="{{ floor.name }} 지도"
+                             style="width: 100%; height: auto; display: block;">
+                        
+                        <!-- 기존 카메라 위치들 -->
+                        {% for position in positions %}
+                        <div class="camera-icon draggable" 
+                             id="camera-{{ position.id }}"
+                             data-position-id="{{ position.id }}"
+                             data-camera-name="{{ position.camera.name }}"
+                             style="position: absolute; 
+                                    top: {{ position.y_position }}%; 
+                                    left: {{ position.x_position }}%;
+                                    width: 40px; height: 40px;
+                                    background: url('{% static "카메라.png" %}') no-repeat center;
+                                    background-size: contain;
+                                    cursor: move;
+                                    transform: translate(-50%, -50%);
+                                    z-index: 10;"
+                             title="{{ position.camera.name }}">
+                            <span class="camera-label">{{ position.camera.name }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-header">
+                    <h5>카메라 목록</h5>
+                </div>
+                <div class="card-body">
+                    <h6>배치된 카메라 ({{ positions.count }}개)</h6>
+                    <ul class="list-group mb-3">
+                        {% for position in positions %}
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>{{ position.camera.name }}</span>
+                            <small class="text-muted">({{ position.x_position|floatformat:1 }}%, {{ position.y_position|floatformat:1 }}%)</small>
+                        </li>
+                        {% empty %}
+                        <li class="list-group-item text-muted">배치된 카메라가 없습니다</li>
+                        {% endfor %}
+                    </ul>
+                    
+                    <h6>미배치 카메라 ({{ available_cameras.count }}개)</h6>
+                    <ul class="list-group">
+                        {% for camera in available_cameras %}
+                        <li class="list-group-item">
+                            {{ camera.name }}
+                            <a href="{% url 'map:camera_position_create' %}?camera={{ camera.id }}&floor={{ floor.id }}" 
+                               class="btn btn-sm btn-outline-primary ms-2">배치</a>
+                        </li>
+                        {% empty %}
+                        <li class="list-group-item text-muted">모든 카메라가 배치되었습니다</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5>관리 메뉴</h5>
+                </div>
+                <div class="card-body">
+                    <a href="{% url 'map:camera_position_list' %}" class="btn btn-secondary btn-sm d-block mb-2">전체 카메라 위치 목록</a>
+                    <a href="{% url 'map:camera_position_create' %}?floor={{ floor.id }}" class="btn btn-primary btn-sm d-block mb-2">새 카메라 추가</a>
+                    <a href="{% url 'map:floor_list' %}" class="btn btn-outline-secondary btn-sm d-block">층 목록으로 돌아가기</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 드래그 앤 드롭 JavaScript -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const mapContainer = document.getElementById('map-container');
+    const floorMap = document.getElementById('floor-map');
+    const draggableElements = document.querySelectorAll('.draggable');
+    
+    let isDragging = false;
+    let currentElement = null;
+    let startX, startY;
+    
+    // 각 드래그 가능한 요소에 이벤트 리스너 추가
+    draggableElements.forEach(element => {
+        element.addEventListener('mousedown', startDrag);
+    });
+    
+    function startDrag(e) {
+        isDragging = true;
+        currentElement = e.target;
+        
+        // 마우스 위치 저장
+        startX = e.clientX;
+        startY = e.clientY;
+        
+        // 드래깅 중 스타일 변경
+        currentElement.style.opacity = '0.7';
+        currentElement.style.zIndex = '1000';
+        
+        // 전역 이벤트 리스너 추가
+        document.addEventListener('mousemove', drag);
+        document.addEventListener('mouseup', stopDrag);
+        
+        e.preventDefault();
+    }
+    
+    function drag(e) {
+        if (!isDragging || !currentElement) return;
+        
+        // 지도 컨테이너의 위치와 크기 계산
+        const mapRect = mapContainer.getBoundingClientRect();
+        const mapWidth = mapRect.width;
+        const mapHeight = mapRect.height;
+        
+        // 마우스 위치를 지도 컨테이너 내 상대 위치로 변환
+        const relativeX = e.clientX - mapRect.left;
+        const relativeY = e.clientY - mapRect.top;
+        
+        // 경계 체크
+        const boundedX = Math.max(0, Math.min(relativeX, mapWidth));
+        const boundedY = Math.max(0, Math.min(relativeY, mapHeight));
+        
+        // 퍼센트로 변환
+        const percentX = (boundedX / mapWidth) * 100;
+        const percentY = (boundedY / mapHeight) * 100;
+        
+        // 요소 위치 업데이트
+        currentElement.style.left = percentX + '%';
+        currentElement.style.top = percentY + '%';
+    }
+    
+    function stopDrag(e) {
+        if (!isDragging || !currentElement) return;
+        
+        // 스타일 복원
+        currentElement.style.opacity = '1';
+        currentElement.style.zIndex = '10';
+        
+        // 최종 위치 계산
+        const mapRect = mapContainer.getBoundingClientRect();
+        const mapWidth = mapRect.width;
+        const mapHeight = mapRect.height;
+        
+        const relativeX = e.clientX - mapRect.left;
+        const relativeY = e.clientY - mapRect.top;
+        
+        const boundedX = Math.max(0, Math.min(relativeX, mapWidth));
+        const boundedY = Math.max(0, Math.min(relativeY, mapHeight));
+        
+        const percentX = (boundedX / mapWidth) * 100;
+        const percentY = (boundedY / mapHeight) * 100;
+        
+        // 서버에 위치 업데이트 전송
+        updateCameraPosition(currentElement.dataset.positionId, percentX, percentY);
+        
+        // 이벤트 리스너 제거
+        document.removeEventListener('mousemove', drag);
+        document.removeEventListener('mouseup', stopDrag);
+        
+        isDragging = false;
+        currentElement = null;
+    }
+    
+    function updateCameraPosition(positionId, x, y) {
+        const url = `{% url 'map:update_camera_position' 0 %}`.replace('0', positionId);
+        
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                x_position: x,
+                y_position: y
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showMessage(data.message, 'success');
+                // 사이드바의 위치 정보 업데이트
+                updateSidebarPosition(positionId, x, y);
+            } else {
+                showMessage(data.message, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showMessage('위치 업데이트 중 오류가 발생했습니다.', 'error');
+        });
+    }
+    
+    function updateSidebarPosition(positionId, x, y) {
+        // 사이드바의 해당 카메라 위치 정보 업데이트
+        const listItems = document.querySelectorAll('.list-group-item');
+        listItems.forEach(item => {
+            const cameraElement = document.querySelector(`[data-position-id="${positionId}"]`);
+            if (cameraElement && item.textContent.includes(cameraElement.dataset.cameraName)) {
+                const small = item.querySelector('small');
+                if (small) {
+                    small.textContent = `(${x.toFixed(1)}%, ${y.toFixed(1)}%)`;
+                }
+            }
+        });
+    }
+    
+    function showMessage(message, type) {
+        // 간단한 토스트 메시지 표시
+        const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert ${alertClass} alert-dismissible fade show position-fixed`;
+        alertDiv.style.top = '20px';
+        alertDiv.style.right = '20px';
+        alertDiv.style.zIndex = '9999';
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        
+        document.body.appendChild(alertDiv);
+        
+        // 3초 후 자동 제거
+        setTimeout(() => {
+            if (alertDiv.parentNode) {
+                alertDiv.parentNode.removeChild(alertDiv);
+            }
+        }, 3000);
+    }
+    
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+});
+</script>
+<script src="{% static 'map/js/drag_drop_manager.js' %}"></script>
+
+<style>
+.camera-icon {
+    border: 2px solid #007bff;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.camera-icon:hover {
+    border-color: #0056b3;
+    transform: translate(-50%, -50%) scale(1.1);
+}
+
+.camera-label {
+    position: absolute;
+    bottom: -25px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+#map-container {
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    overflow: hidden;
+}
+</style>
+{% endblock %}

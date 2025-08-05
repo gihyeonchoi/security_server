@@ -1,0 +1,443 @@
+/* Map Admin CSS - 지도 관리 시스템 전용 스타일 */
+
+/* ================== 공통 스타일 ================== */
+.card {
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+    border: 1px solid #e3e6f0;
+    margin-bottom: 1.5rem;
+}
+
+.card-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 10px 10px 0 0;
+    padding: 1rem 1.5rem;
+}
+
+.card-header h4, .card-header h5 {
+    margin: 0;
+    font-weight: 600;
+}
+
+.btn {
+    border-radius: 6px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+    transform: translateY(-1px);
+}
+
+.btn-outline-primary:hover {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-color: #667eea;
+}
+
+/* ================== 테이블 스타일 ================== */
+.table {
+    margin-bottom: 0;
+}
+
+.table th {
+    background-color: #f8f9fc;
+    border-top: none;
+    color: #5a5c69;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    letter-spacing: 0.5px;
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+.table tbody tr:hover {
+    background-color: rgba(102, 126, 234, 0.1);
+    transition: background-color 0.15s ease-in-out;
+}
+
+/* ================== 배지 및 상태 ================== */
+.badge {
+    padding: 0.4em 0.8em;
+    border-radius: 20px;
+    font-weight: 500;
+}
+
+.badge.bg-success {
+    background: linear-gradient(135deg, #1cc88a 0%, #13855c 100%) !important;
+}
+
+.badge.bg-warning {
+    background: linear-gradient(135deg, #f6c23e 0%, #dda20a 100%) !important;
+}
+
+.badge.bg-secondary {
+    background: linear-gradient(135deg, #858796 0%, #60616f 100%) !important;
+}
+
+/* ================== 폼 스타일 ================== */
+.form-control {
+    border-radius: 6px;
+    border: 1px solid #d1d3e2;
+    transition: all 0.15s ease-in-out;
+}
+
+.form-control:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+.form-select {
+    border-radius: 6px;
+    border: 1px solid #d1d3e2;
+}
+
+.form-select:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+.form-label {
+    font-weight: 600;
+    color: #5a5c69;
+    margin-bottom: 0.5rem;
+}
+
+/* ================== 알림 스타일 ================== */
+.alert {
+    border-radius: 8px;
+    border: none;
+}
+
+.alert-success {
+    background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+    color: #155724;
+}
+
+.alert-danger {
+    background: linear-gradient(135deg, #f8d7da 0%, #f1aeb5 100%);
+    color: #721c24;
+}
+
+.alert-warning {
+    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    color: #856404;
+}
+
+.alert-info {
+    background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%);
+    color: #0c5460;
+}
+
+/* ================== 드래그 앤 드롭 전용 스타일 ================== */
+.drag-drop-container {
+    position: relative;
+    border: 2px dashed #d1d3e2;
+    border-radius: 10px;
+    background: #f8f9fc;
+    min-height: 500px;
+    overflow: hidden;
+}
+
+.drag-drop-container:hover {
+    border-color: #667eea;
+    background: #f4f6ff;
+}
+
+.camera-icon {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    background: url('../카메라.png') no-repeat center;
+    background-size: contain;
+    cursor: move;
+    transform: translate(-50%, -50%);
+    z-index: 10;
+    border: 3px solid #667eea;
+    border-radius: 50%;
+    background-color: white;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.camera-icon:hover {
+    border-color: #5a6fd8;
+    transform: translate(-50%, -50%) scale(1.1);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.camera-icon.dragging {
+    opacity: 0.8;
+    z-index: 1000;
+    transform: translate(-50%, -50%) scale(1.05);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.camera-label {
+    position: absolute;
+    bottom: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* ================== 지도 컨테이너 스타일 ================== */
+#map-container {
+    position: relative;
+    border: 2px solid #e3e6f0;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    background: #fff;
+}
+
+#map-container img {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.location-selector {
+    background: #f8f9fc;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+.location-selector .form-select {
+    max-width: 300px;
+}
+
+/* ================== 컨트롤 버튼 스타일 ================== */
+#controls {
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+#controls button {
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 2px solid #e3e6f0;
+    background: white;
+    color: #5a5c69;
+    margin: 0 8px;
+    border-radius: 25px;
+    transition: all 0.3s ease;
+    min-width: 80px;
+}
+
+#controls button:hover {
+    background: #f8f9fc;
+    border-color: #667eea;
+    color: #667eea;
+    transform: translateY(-2px);
+}
+
+#controls button.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-color: #667eea;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+/* ================== 위치 추적 점 스타일 ================== */
+#location-dot {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    background: linear-gradient(135deg, #ff4757 0%, #c44569 100%);
+    border-radius: 50%;
+    border: 3px solid white;
+    box-shadow: 0 0 0 2px #ff4757, 0 0 20px rgba(255, 71, 87, 0.6);
+    transform: translate(-50%, -50%);
+    z-index: 20;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.7), 0 0 0 3px white;
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(255, 71, 87, 0), 0 0 0 3px white;
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(255, 71, 87, 0), 0 0 0 3px white;
+    }
+}
+
+/* ================== 상태 메시지 스타일 ================== */
+#status {
+    margin-top: 20px;
+    padding: 12px 20px;
+    background: linear-gradient(135deg, #eaf2f8 0%, #d6e9f5 100%);
+    border-radius: 8px;
+    color: #2874a6;
+    text-align: center;
+    font-weight: 500;
+    border-left: 4px solid #2874a6;
+}
+
+/* ================== 사이드바 스타일 ================== */
+.list-group-item {
+    border: 1px solid #e3e6f0;
+    padding: 12px 16px;
+    transition: all 0.15s ease-in-out;
+}
+
+.list-group-item:hover {
+    background-color: #f8f9fc;
+    border-color: #667eea;
+}
+
+.list-group-item:first-child {
+    border-radius: 8px 8px 0 0;
+}
+
+.list-group-item:last-child {
+    border-radius: 0 0 8px 8px;
+}
+
+.list-group-item.text-muted {
+    font-style: italic;
+    background: #f8f9fc;
+}
+
+/* ================== 토스트 메시지 스타일 ================== */
+.position-fixed.alert {
+    min-width: 300px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+    border-radius: 8px;
+    z-index: 9999;
+}
+
+/* ================== 반응형 스타일 ================== */
+@media (max-width: 768px) {
+    .card-header {
+        padding: 0.75rem 1rem;
+    }
+    
+    .card-header h4 {
+        font-size: 1.1rem;
+    }
+    
+    .btn-group .btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.8rem;
+    }
+    
+    #controls button {
+        padding: 8px 16px;
+        font-size: 12px;
+        margin: 0 4px;
+        min-width: 60px;
+    }
+    
+    .camera-icon {
+        width: 32px;
+        height: 32px;
+    }
+    
+    .camera-label {
+        font-size: 8px;
+        padding: 2px 6px;
+    }
+}
+
+@media (max-width: 576px) {
+    .container {
+        padding: 0 10px;
+    }
+    
+    .table-responsive {
+        font-size: 0.9rem;
+    }
+    
+    .btn-group {
+        flex-direction: column;
+    }
+    
+    .btn-group .btn {
+        margin: 1px 0;
+        border-radius: 4px !important;
+    }
+}
+
+/* ================== 로딩 애니메이션 ================== */
+.loading-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(102, 126, 234, 0.3);
+    border-radius: 50%;
+    border-top-color: #667eea;
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ================== 이미지 미리보기 스타일 ================== */
+.image-preview {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    margin-top: 10px;
+}
+
+.image-upload-area {
+    border: 2px dashed #d1d3e2;
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    background: #f8f9fc;
+    transition: all 0.3s ease;
+}
+
+.image-upload-area:hover {
+    border-color: #667eea;
+    background: #f4f6ff;
+}
+
+/* ================== 통계 카드 스타일 ================== */
+.stats-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 10px;
+    padding: 1.5rem;
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.stats-card h3 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.stats-card p {
+    margin: 0.5rem 0 0 0;
+    opacity: 0.9;
+    font-weight: 500;
+}

@@ -1,0 +1,122 @@
+{% extends 'map/base.html' %}
+{% load static %}
+
+{% block title %}카메라 위치 관리{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'map/css/map_admin.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>카메라 위치 관리</h2>
+        <a href="{% url 'map:camera_position_create' %}" class="btn btn-primary">새 카메라 위치 추가</a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="card">
+        <div class="card-body">
+            {% if positions %}
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>위치</th>
+                            <th>층</th>
+                            <th>카메라</th>
+                            <th>위치 좌표</th>
+                            <th>상태</th>
+                            <th>스트림</th>
+                            <th>작업</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for position in positions %}
+                        <tr>
+                            <td>{{ position.floor.location.name }}</td>
+                            <td>{{ position.floor.name }}</td>
+                            <td><strong>{{ position.camera.name }}</strong></td>
+                            <td>
+                                <small>X: {{ position.x_position|floatformat:1 }}%</small><br>
+                                <small>Y: {{ position.y_position|floatformat:1 }}%</small>
+                            </td>
+                            <td>
+                                {% if position.is_active %}
+                                    <span class="badge bg-success">활성</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">비활성</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{{ position.stream_url }}" target="_blank" class="btn btn-sm btn-outline-info">보기</a>
+                            </td>
+                            <td>
+                                <div class="btn-group" role="group">
+                                    <a href="{% url 'map:camera_position_edit' position.pk %}" 
+                                       class="btn btn-sm btn-outline-primary">수정</a>
+                                    <a href="{% url 'map:camera_position_manager' position.floor.id %}" 
+                                       class="btn btn-sm btn-outline-info">위치조정</a>
+                                    <a href="{% url 'map:camera_position_delete' position.pk %}" 
+                                       class="btn btn-sm btn-outline-danger">삭제</a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if is_paginated %}
+            <nav aria-label="페이지 네비게이션">
+                <ul class="pagination justify-content-center">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}">이전</a>
+                        </li>
+                    {% endif %}
+                    
+                    {% for num in page_obj.paginator.page_range %}
+                        {% if page_obj.number == num %}
+                            <li class="page-item active">
+                                <span class="page-link">{{ num }}</span>
+                            </li>
+                        {% else %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+                    
+                    {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.next_page_number }}">다음</a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+            {% else %}
+            <div class="text-center py-5">
+                <p class="text-muted">등록된 카메라 위치가 없습니다.</p>
+                <a href="{% url 'map:camera_position_create' %}" class="btn btn-primary">첫 번째 카메라 위치 추가하기</a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="mt-3">
+        <a href="{% url 'map:location_list' %}" class="btn btn-outline-secondary">위치 관리</a>
+        <a href="{% url 'map:floor_list' %}" class="btn btn-outline-secondary">층 관리</a>
+        <a href="{% url 'map:map_view' %}" class="btn btn-outline-primary">지도 보기</a>
+    </div>
+</div>
+{% endblock %}

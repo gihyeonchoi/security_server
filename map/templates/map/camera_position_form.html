@@ -1,0 +1,151 @@
+{% extends 'map/base.html' %}
+
+{% block title %}
+    {% if object %}카메라 위치 수정{% else %}카메라 위치 추가{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h4>{% if object %}카메라 위치 수정{% else %}새 카메라 위치 추가{% endif %}</h4>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.camera.id_for_label }}" class="form-label">{{ form.camera.label }}</label>
+                                    {{ form.camera }}
+                                    {% if form.camera.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.camera.errors %}
+                                                <small>{{ error }}</small>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.floor.id_for_label }}" class="form-label">{{ form.floor.label }}</label>
+                                    {{ form.floor }}
+                                    {% if form.floor.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.floor.errors %}
+                                                <small>{{ error }}</small>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.x_position.id_for_label }}" class="form-label">{{ form.x_position.label }}</label>
+                                    {{ form.x_position }}
+                                    {% if form.x_position.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.x_position.errors %}
+                                                <small>{{ error }}</small>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    <div class="form-text">지도에서 왼쪽부터의 거리 (0-100%)</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.y_position.id_for_label }}" class="form-label">{{ form.y_position.label }}</label>
+                                    {{ form.y_position }}
+                                    {% if form.y_position.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.y_position.errors %}
+                                                <small>{{ error }}</small>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    <div class="form-text">지도에서 위쪽부터의 거리 (0-100%)</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="form-check">
+                                {{ form.is_active }}
+                                <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                    {{ form.is_active.label }}
+                                </label>
+                            </div>
+                            {% if form.is_active.errors %}
+                                <div class="text-danger">
+                                    {% for error in form.is_active.errors %}
+                                        <small>{{ error }}</small>
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        {% if form.non_field_errors %}
+                            <div class="alert alert-danger">
+                                {% for error in form.non_field_errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+
+                        <div class="alert alert-info">
+                            <strong>팁:</strong> 정확한 위치 조정은 
+                            {% if object %}
+                                <a href="{% url 'map:camera_position_manager' object.floor.id %}">드래그 앤 드롭 관리 페이지</a>
+                            {% else %}
+                                저장 후 드래그 앤 드롭 관리 페이지
+                            {% endif %}
+                            에서 할 수 있습니다.
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                {% if object %}수정하기{% else %}추가하기{% endif %}
+                            </button>
+                            <a href="{% url 'map:camera_position_list' %}" class="btn btn-secondary">취소</a>
+                            {% if object %}
+                                <a href="{% url 'map:camera_position_manager' object.floor.id %}" class="btn btn-outline-info">위치 조정</a>
+                            {% endif %}
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// URL 파라미터에서 기본값 설정
+document.addEventListener('DOMContentLoaded', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const cameraId = urlParams.get('camera');
+    const floorId = urlParams.get('floor');
+    
+    if (cameraId) {
+        const cameraSelect = document.getElementById('{{ form.camera.id_for_label }}');
+        if (cameraSelect) {
+            cameraSelect.value = cameraId;
+        }
+    }
+    
+    if (floorId) {
+        const floorSelect = document.getElementById('{{ form.floor.id_for_label }}');
+        if (floorSelect) {
+            floorSelect.value = floorId;
+        }
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,129 @@
+{% extends 'map/base.html' %}
+{% load static %}
+
+{% block title %}층 관리{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'map/css/map_admin.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>층 관리</h2>
+        <a href="{% url 'map:floor_create' %}" class="btn btn-primary">새 층 추가</a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="card">
+        <div class="card-body">
+            {% if floors %}
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>위치</th>
+                            <th>층</th>
+                            <th>지도</th>
+                            <th>카메라 수</th>
+                            <th>GPS 설정</th>
+                            <th>작업</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for floor in floors %}
+                        <tr>
+                            <td>{{ floor.location.name }}</td>
+                            <td><strong>{{ floor.name }}</strong></td>
+                            <td>
+                                {% if floor.map_image %}
+                                    <img src="{{ floor.map_image.url }}" 
+                                         alt="{{ floor.name }} 지도" 
+                                         style="width: 60px; height: 40px; object-fit: cover;">
+                                {% else %}
+                                    <span class="text-muted">없음</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {{ floor.camera_positions.count }}개
+                                {% if floor.camera_positions.exists %}
+                                    <a href="{% url 'map:camera_position_manager' floor.id %}" 
+                                       class="btn btn-sm btn-outline-info ms-1">관리</a>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if floor.top_left_lat and floor.top_left_lon %}
+                                    <span class="badge bg-success">설정됨</span>
+                                {% else %}
+                                    <span class="badge bg-warning">미설정</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group" role="group">
+                                    <a href="{% url 'map:floor_edit' floor.pk %}" 
+                                       class="btn btn-sm btn-outline-primary">수정</a>
+                                    <a href="{% url 'map:camera_position_manager' floor.id %}" 
+                                       class="btn btn-sm btn-outline-info">카메라</a>
+                                    <a href="{% url 'map:floor_delete' floor.pk %}" 
+                                       class="btn btn-sm btn-outline-danger">삭제</a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if is_paginated %}
+            <nav aria-label="페이지 네비게이션">
+                <ul class="pagination justify-content-center">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}">이전</a>
+                        </li>
+                    {% endif %}
+                    
+                    {% for num in page_obj.paginator.page_range %}
+                        {% if page_obj.number == num %}
+                            <li class="page-item active">
+                                <span class="page-link">{{ num }}</span>
+                            </li>
+                        {% else %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+                    
+                    {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.next_page_number }}">다음</a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+            {% else %}
+            <div class="text-center py-5">
+                <p class="text-muted">등록된 층이 없습니다.</p>
+                <a href="{% url 'map:floor_create' %}" class="btn btn-primary">첫 번째 층 추가하기</a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="mt-3">
+        <a href="{% url 'map:location_list' %}" class="btn btn-outline-secondary">위치 관리</a>
+        <a href="{% url 'map:camera_position_list' %}" class="btn btn-outline-secondary">카메라 위치 관리</a>
+        <a href="{% url 'map:map_view' %}" class="btn btn-outline-primary">지도 보기</a>
+    </div>
+</div>
+{% endblock %}

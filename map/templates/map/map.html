@@ -1,5 +1,11 @@
-{% extends 'base.html' %}
-{% load static %} {% block title %}실내 지도{% endblock %}
+{% extends 'map/base.html' %}
+{% load static %} 
+
+{% block title %}실내 지도{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'map/css/map_admin.css' %}">
+{% endblock %}
 
 {% block content %}
 
@@ -114,89 +120,171 @@
         }
 </style>
 </head>
-<h1>대학본부 실내 지도</h1>
+{% if location %}
+<h1>{{ location.name }} 실내 지도</h1>
 
-<div id="controls">
-    <button id="btn-floor1" class="active" data-floor="1">1층</button>
-    <button id="btn-floor2" data-floor="2">2층</button>
+<!-- 위치 선택 드롭다운 -->
+{% if locations|length > 1 %}
+<div class="location-selector mb-3">
+    <select id="location-select" class="form-select" onchange="changeLocation(this.value)">
+        {% for loc in locations %}
+        <option value="{{ loc.id }}" {% if loc.id == location.id %}selected{% endif %}>
+            {{ loc.name }}
+        </option>
+        {% endfor %}
+    </select>
 </div>
+{% endif %}
 
+<!-- 층 선택 버튼 -->
+<div id="controls">
+    {% for floor in floors %}
+    <button id="btn-floor{{ floor.id }}" class="{% if forloop.first %}active{% endif %}" data-floor="{{ floor.id }}" data-floor-number="{{ floor.floor_number }}">
+        {{ floor.name }}
+    </button>
+    {% endfor %}
+</div>
+{% else %}
+<h1>지도 오류</h1>
+<div class="alert alert-warning">{{ error }}</div>
+{% endif %}
+
+{% if location and floors %}
 <div id="map-container">
-    <img src="{% static '폴리텍 1f.png' %}" id="floor1-map" alt="1층 지도">
-    <img src="{% static '폴리텍 2f.png' %}" id="floor2-map" class="hidden" alt="2층 지도">
+    {% for floor in floors %}
+    <img src="{{ floor.map_image.url }}" 
+         id="floor{{ floor.id }}-map" 
+         class="{% if not forloop.first %}hidden{% endif %}" 
+         alt="{{ floor.name }} 지도"
+         data-floor-id="{{ floor.id }}"
+         data-top-left-lat="{{ floor.top_left_lat }}"
+         data-top-left-lon="{{ floor.top_left_lon }}"
+         data-bottom-right-lat="{{ floor.bottom_right_lat }}"
+         data-bottom-right-lon="{{ floor.bottom_right_lon }}">
+    {% endfor %}
     
     <div id="location-dot"></div>
 
-    <div id="camera-icon-floor1" class="camera-icon"
-     data-url="{% if camera1 %}{{ camera1.rtsp_url }}{% else %}#{% endif %}"></div>
-
-    <div id="camera-icon-floor2" class="camera-icon hidden"
-     data-url="{% if camera2 %}{{ camera2.rtsp_url }}{% else %}#{% endif %}"></div>
+    <!-- 동적 카메라 아이콘 렌더링 -->
+    {% for floor in floors %}
+        {% for position in floor.camera_positions.all %}
+            {% if position.is_active %}
+            <div id="camera-icon-{{ position.id }}" 
+                 class="camera-icon {% if not forloop.parentloop.first %}hidden{% endif %}"
+                 data-floor-id="{{ floor.id }}"
+                 data-url="{{ position.stream_url }}"
+                 data-camera-name="{{ position.camera.name }}"
+                 style="top: {{ position.y_position }}%; left: {{ position.x_position }}%;">
+            </div>
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
 </div>
+{% endif %}
 
 <div id="status">서버에서 위치 정보를 기다리는 중...</div>
 
 <script>
         // --- 설정 값 ---
-        const topLeftGPS = { lat: 37.799390, lon: 127.777857 };
-        const bottomRightGPS = { lat: 37.798934, lon: 127.779301};
-        const locationApiUrl = '/map/location/'; // Django URL에 맞게 수정
+        let currentFloorData = null;
+        const locationApiUrl = '/map/location/';
         const UPDATE_INTERVAL = 3000;
+        
+        // 현재 층의 GPS 데이터 가져오기
+        function getCurrentFloorGPS() {
+            const activeMap = document.querySelector('img:not(.hidden)');
+            if (!activeMap) return null;
+            
+            return {
+                topLeft: { 
+                    lat: parseFloat(activeMap.dataset.topLeftLat) || null, 
+                    lon: parseFloat(activeMap.dataset.topLeftLon) || null 
+                },
+                bottomRight: { 
+                    lat: parseFloat(activeMap.dataset.bottomRightLat) || null, 
+                    lon: parseFloat(activeMap.dataset.bottomRightLon) || null 
+                }
+            };
+        }
 
         // --- DOM 요소 ---
-        const floor1Btn = document.getElementById('btn-floor1');
-        const floor2Btn = document.getElementById('btn-floor2');
-        const floor1Map = document.getElementById('floor1-map');
-        const floor2Map = document.getElementById('floor2-map');
         const locationDot = document.getElementById('location-dot');
         const statusDiv = document.getElementById('status');
-        
-        const cameraIcon1 = document.getElementById('camera-icon-floor1');
-        const cameraIcon2 = document.getElementById('camera-icon-floor2');
+        const floorButtons = document.querySelectorAll('#controls button');
         const cameraIcons = document.querySelectorAll('.camera-icon');
         
         // --- 상태 변수 ---
-        let currentFloor = 1;
+        let currentFloorId = {% if floors %}{{ floors.0.id }}{% else %}null{% endif %};
+        let currentFloorNumber = {% if floors %}{{ floors.0.floor_number }}{% else %}1{% endif %};
 
         /**
          * 층을 변경하는 함수
          */
-        function changeFloor(floorNum) {
-            currentFloor = floorNum;
+        function changeFloor(floorId, floorNumber) {
+            currentFloorId = floorId;
+            currentFloorNumber = floorNumber;
             
-            floor1Map.classList.toggle('hidden', floorNum !== 1);
-            floor2Map.classList.toggle('hidden', floorNum !== 2);
+            // 모든 지도 숨기기
+            document.querySelectorAll('#map-container img').forEach(img => {
+                img.classList.add('hidden');
+            });
             
-            floor1Btn.classList.toggle('active', floorNum === 1);
-            floor2Btn.classList.toggle('active', floorNum === 2);
+            // 선택된 층 지도 보이기
+            const activeMap = document.getElementById(`floor${floorId}-map`);
+            if (activeMap) {
+                activeMap.classList.remove('hidden');
+            }
             
-            cameraIcon1.classList.toggle('hidden', floorNum !== 1);
-            cameraIcon2.classList.toggle('hidden', floorNum !== 2);
+            // 버튼 상태 업데이트
+            floorButtons.forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.floor == floorId);
+            });
+            
+            // 카메라 아이콘 보이기/숨기기
+            cameraIcons.forEach(icon => {
+                const iconFloorId = icon.dataset.floorId;
+                icon.classList.toggle('hidden', iconFloorId != floorId);
+            });
 
             updateLocation();
+        }
+        
+        /**
+         * 위치 변경 함수
+         */
+        function changeLocation(locationId) {
+            window.location.href = `?location=${locationId}`;
         }
 
         /**
          * GPS 좌표를 지도 이미지의 픽셀 좌표로 변환
          */
         function mapGpsToPixels(lat, lon) {
-            const activeMap = (currentFloor === 1) ? floor1Map : floor2Map;
+            const gpsData = getCurrentFloorGPS();
+            if (!gpsData || !gpsData.topLeft.lat || !gpsData.topLeft.lon || 
+                !gpsData.bottomRight.lat || !gpsData.bottomRight.lon) {
+                return null;
+            }
+            
+            const activeMap = document.querySelector('img:not(.hidden)');
+            if (!activeMap) return null;
+            
             const mapWidth = activeMap.offsetWidth;
             const mapHeight = activeMap.offsetHeight;
 
             if (mapWidth === 0 || mapHeight === 0) {
                 return null;
             }
-            const latRange = topLeftGPS.lat - bottomRightGPS.lat;
-            const lonRange = bottomRightGPS.lon - topLeftGPS.lon;
+            
+            const latRange = gpsData.topLeft.lat - gpsData.bottomRight.lat;
+            const lonRange = gpsData.bottomRight.lon - gpsData.topLeft.lon;
             if (latRange <= 0 || lonRange <= 0) return null;
 
-            const latFraction = (topLeftGPS.lat - lat) / latRange;
-            const lonFraction = (lon - topLeftGPS.lon) / lonRange;
+            const latFraction = (gpsData.topLeft.lat - lat) / latRange;
+            const lonFraction = (lon - gpsData.topLeft.lon) / lonRange;
             
             const pixelX = lonFraction * mapWidth;
             const pixelY = latFraction * mapHeight;
-            console.log(mapWidth,mapHeight)
 
             if (pixelX >= 0 && pixelX <= mapWidth && pixelY >= 0 && pixelY <= mapHeight) {
                 return { x: pixelX, y: pixelY };
@@ -219,7 +307,7 @@
                     throw new Error("서버에 아직 유효한 위치 정보가 없습니다.");
                 }
 
-                if (locationData.altitude == currentFloor) {
+                if (locationData.altitude == currentFloorNumber) {
                     statusDiv.textContent = `위치 수신: ${locationData.altitude}층 (현재 층과 일치)`;
                     const pixelCoords = mapGpsToPixels(locationData.latitude, locationData.longitude);
                     
@@ -229,12 +317,11 @@
                         locationDot.style.display = 'block';
                     } else {
                         locationDot.style.display = 'none';
-                        statusDiv.textContent += ' (지도 범위 벗어남)';
+                        statusDiv.textContent += ' (지도 범위 벗어남 또는 GPS 데이터 없음)';
                     }
-                    console.log(locationDot)
                 } else {
                     locationDot.style.display = 'none';
-                    statusDiv.textContent = `위치 수신: ${locationData.altitude}층 (현재 ${currentFloor}층과 달라 숨김)`;
+                    statusDiv.textContent = `위치 수신: ${locationData.altitude}층 (현재 ${currentFloorNumber}층과 달라 숨김)`;
                 }
             } catch (error) {
                 console.error('위치 정보 업데이트 실패:', error);
@@ -244,8 +331,13 @@
         }
         
         // --- 이벤트 리스너 ---
-        floor1Btn.addEventListener('click', () => changeFloor(1));
-        floor2Btn.addEventListener('click', () => changeFloor(2));
+        floorButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const floorId = parseInt(btn.dataset.floor);
+                const floorNumber = parseInt(btn.dataset.floorNumber);
+                changeFloor(floorId, floorNumber);
+            });
+        });
         
         // 🚀 모든 카메라 아이콘에 클릭 이벤트를 추가하고, data-url에 지정된 주소로 이동시킵니다.
         cameraIcons.forEach(icon => {
@@ -260,9 +352,12 @@
 
         // --- 초기화 ---
         window.onload = () => {
-            changeFloor(1);
+            {% if floors %}
+            changeFloor({{ floors.0.id }}, {{ floors.0.floor_number }});
+            {% endif %}
             updateLocation();
             setInterval(updateLocation, UPDATE_INTERVAL);
         };
     </script>
+    <script src="{% static 'map/js/dynamic_map.js' %}"></script>
 {% endblock %}
