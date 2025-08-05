@@ -24,4 +24,5 @@ urlpatterns = [
     path('RFID/', include('RFID.urls')),
     path('cctv/', include('CCTV.urls')),
     path('CCTV/', include('CCTV.urls')),  # 대문자도 지원
+    path('map/', include('map.urls')),
 ]

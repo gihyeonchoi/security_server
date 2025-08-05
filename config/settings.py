@@ -33,6 +33,7 @@ ALLOWED_HOSTS = ['*']
 INSTALLED_APPS = [
     'RFID.apps.RfidConfig',
     'CCTV.apps.CctvConfig',
+    'map.apps.MapConfig',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -141,6 +142,7 @@ STATIC_URL = '/static/'
 STATICFILES_DIRS = [
     BASE_DIR / "CCTV" / "static",
     BASE_DIR / "RFID" / "static",
+    BASE_DIR / "map" / "static",
 ]
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
