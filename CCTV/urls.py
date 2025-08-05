@@ -23,4 +23,12 @@ urlpatterns = [
     path('camera/<int:camera_id>/stream/', views.camera_stream, name='camera_stream'),
     path('api/camera-status/', views.camera_status_api, name='camera_status_api'),
     path('multi-camera/', views.multi_camera_view, name='multi_camera_view'),
+    
+    # AI 탐지 관련
+    path('api/detection-logs/', views.detection_logs_api, name='detection_logs_api'),
+    path('detection/start/', views.start_detection, name='start_detection'),
+    path('detection/stop/', views.stop_detection, name='stop_detection'),
+    
+    # 실시간 알림 (SSE)
+    path('alerts/stream/', views.detection_alerts_stream, name='detection_alerts_stream'),
 ]

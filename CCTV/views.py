@@ -1,10 +1,13 @@
 
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.views import login_required
-from django.http import StreamingHttpResponse, JsonResponse
+from django.http import StreamingHttpResponse, JsonResponse, HttpResponse
 from django.contrib import messages
-from .models import Camera, TargetLabel
-from .utils import camera_streamer
+from .models import Camera, TargetLabel, DetectionLog
+from .utils import camera_streamer, ai_detection_system
+import json
+import time
+import queue
 
 @login_required
 def camera_stream(request, camera_id):
@@ -160,3 +163,124 @@ def target_label_delete(request, label_id):
         return redirect('cctv:index')
     
     return render(request, 'cctv/target_label_confirm_delete.html', {'target_label': target_label})
+
+def detection_alerts_stream(request):
+    """SSE를 위한 실시간 알림 스트림"""
+    def event_stream():
+        # SSE 헤더 설정
+        yield "data: {\"type\": \"connected\", \"message\": \"알림 스트림 연결됨\"}\n\n"
+        
+        # 최근 10개 탐지 로그 전송
+        recent_logs = DetectionLog.objects.filter(has_alert=True)[:10]
+        for log in recent_logs:
+            alert_data = {
+                'type': 'detection_alert',
+                'id': log.id,
+                'camera_name': log.camera_name,
+                'camera_location': log.camera_location,
+                'detected_object': log.detected_object,
+                'object_count': log.object_count,
+                'detected_at': log.detected_at.isoformat(),
+                'has_screenshot': bool(log.screenshot_path),
+                'confidence': log.confidence
+            }
+            yield f"data: {json.dumps(alert_data)}\n\n"
+        
+        # 실시간 알림 대기
+        while True:
+            try:
+                # AI 탐지 시스템의 알림 큐에서 새 알림 확인
+                if hasattr(ai_detection_system, 'alert_queue'):
+                    try:
+                        alert = ai_detection_system.alert_queue.get_nowait()
+                        yield f"data: {json.dumps(alert)}\n\n"
+                    except queue.Empty:
+                        pass
+                
+                # 하트비트 전송 (30초마다)
+                yield "data: {\"type\": \"heartbeat\"}\n\n"
+                time.sleep(30)
+                
+            except Exception as e:
+                yield f"data: {{\"type\": \"error\", \"message\": \"스트림 오류: {str(e)}\"}}\n\n"
+                break
+    
+    response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'  # nginx 버퍼링 비활성화
+    return response
+
+@login_required
+def detection_logs_api(request):
+    """탐지 로그 API (페이징 지원)"""
+    page = int(request.GET.get('page', 1))
+    page_size = int(request.GET.get('page_size', 20))
+    alert_only = request.GET.get('alert_only', 'false').lower() == 'true'
+    
+    logs = DetectionLog.objects.all()
+    if alert_only:
+        logs = logs.filter(has_alert=True)
+    
+    total_count = logs.count()
+    start = (page - 1) * page_size
+    end = start + page_size
+    logs = logs[start:end]
+    
+    logs_data = []
+    for log in logs:
+        logs_data.append({
+            'id': log.id,
+            'camera_name': log.camera_name,
+            'camera_location': log.camera_location,
+            'detected_object': log.detected_object,
+            'object_count': log.object_count,
+            'confidence': log.confidence,
+            'has_alert': log.has_alert,
+            'has_screenshot': log.screenshot_exists,
+            'detected_at': log.detected_at.isoformat()
+        })
+    
+    return JsonResponse({
+        'status': 'success',
+        'logs': logs_data,
+        'total_count': total_count,
+        'page': page,
+        'page_size': page_size,
+        'has_next': end < total_count
+    })
+
+@login_required
+def start_detection(request):
+    """AI 탐지 시작"""
+    if request.method == 'POST':
+        try:
+            camera_id = request.POST.get('camera_id')
+            if camera_id:
+                camera = get_object_or_404(Camera, id=camera_id)
+                ai_detection_system.start_detection_for_camera(camera)
+                messages.success(request, f'카메라 "{camera.name}"의 AI 탐지가 시작되었습니다.')
+            else:
+                ai_detection_system.start_all_detections()
+                messages.success(request, '모든 카메라의 AI 탐지가 시작되었습니다.')
+        except Exception as e:
+            messages.error(request, f'AI 탐지 시작 실패: {str(e)}')
+    
+    return redirect('cctv:index')
+
+@login_required
+def stop_detection(request):
+    """AI 탐지 중지"""
+    if request.method == 'POST':
+        try:
+            camera_id = request.POST.get('camera_id')
+            if camera_id:
+                ai_detection_system.stop_detection_for_camera(int(camera_id))
+                camera = get_object_or_404(Camera, id=camera_id)
+                messages.success(request, f'카메라 "{camera.name}"의 AI 탐지가 중지되었습니다.')
+            else:
+                ai_detection_system.stop_all_detections()
+                messages.success(request, '모든 카메라의 AI 탐지가 중지되었습니다.')
+        except Exception as e:
+            messages.error(request, f'AI 탐지 중지 실패: {str(e)}')
+    
+    return redirect('cctv:index')
