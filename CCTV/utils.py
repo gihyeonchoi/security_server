@@ -335,7 +335,13 @@ class AIDetectionSystem:
             os.makedirs(self.screenshot_dir, exist_ok=True)
     
     def load_models(self):
-        """YOLO11 및 CLIP 모델 로드"""
+        """YOLO11 및 CLIP 모델 로드 (디버그 추가)"""
+        print("\n🔧 AI 모델 로드 시작...")
+        print(f"  - PyTorch 버전: {torch.__version__}")
+        print(f"  - CUDA 사용 가능: {torch.cuda.is_available()}")
+        if torch.cuda.is_available():
+            print(f"  - CUDA 디바이스: {torch.cuda.get_device_name(0)}")
+        
         try:
             # 리눅스/우분투 환경에서 디스플레이 서버 없이 OpenCV 실행 설정
             import platform
@@ -347,6 +353,9 @@ class AIDetectionSystem:
             
             # YOLO11 모델 로드
             yolo_path = os.path.join(settings.BASE_DIR, 'CCTV', 'yolo11n.pt')
+            print(f"  - YOLO 모델 경로: {yolo_path}")
+            print(f"  - YOLO 모델 존재: {os.path.exists(yolo_path)}")
+            
             if os.path.exists(yolo_path):
                 # 헤드리스 환경에서 YOLO 모델 로드 시 verbose=False 설정
                 self.yolo_model = YOLO(yolo_path)
@@ -354,11 +363,17 @@ class AIDetectionSystem:
                 if not torch.cuda.is_available():
                     self.device = "cpu"
                 print(f"✅ YOLO11 모델 로드 완료: {yolo_path} (device: {self.device})")
+                
+                # YOLO 클래스 정보 출력
+                if hasattr(self.yolo_model, 'model') and hasattr(self.yolo_model.model, 'names'):
+                    print(f"  - YOLO 클래스 수: {len(self.yolo_model.model.names)}")
+                    print(f"  - YOLO 주요 클래스: {list(self.yolo_model.model.names.values())[:10]}...")
             else:
                 print(f"❌ YOLO11 모델 파일을 찾을 수 없습니다: {yolo_path}")
             
             # CLIP 모델 로드
             try:
+                print(f"\n  - CLIP 모델 로드 중...")
                 self.clip_model, self.clip_preprocess = clip.load("ViT-B/32", device=self.device)
                 print(f"✅ CLIP 모델 로드 완료 (device: {self.device})")
             except Exception as clip_error:
@@ -370,6 +385,8 @@ class AIDetectionSystem:
             
         except Exception as e:
             print(f"❌ AI 모델 로드 실패: {e}")
+            import traceback
+            traceback.print_exc()
             # 모델 로드 실패 시에도 시스템이 계속 동작하도록 설정
             self.yolo_model = None
             self.clip_model = None
@@ -394,8 +411,10 @@ class AIDetectionSystem:
             print(f"⏹️ 카메라 ID {camera_id} 탐지 중지")
     
     def _detection_worker(self, camera):
-        """카메라별 탐지 워커 스레드"""
+        """카메라별 탐지 워커 스레드 (디버그 로그 추가)"""
         from .models import TargetLabel, DetectionLog
+        
+        print(f"\n🚀 탐지 워커 시작: 카메라 '{camera.name}' (ID: {camera.id})")
         
         while self.detection_active.get(camera.id, False):
             try:
@@ -403,6 +422,7 @@ class AIDetectionSystem:
                 camera_info = camera_streamer.get_camera_stream(camera.rtsp_url)
                 
                 if not camera_info['is_connected']:
+                    print(f"⚠️ 카메라 '{camera.name}' 연결되지 않음. 대기 중...")
                     time.sleep(2)
                     continue
                 
@@ -414,6 +434,7 @@ class AIDetectionSystem:
                 
                 try:
                     frame = frame_queue.get_nowait()
+                    print(f"\n📹 프레임 획득: 카메라 '{camera.name}' - 크기: {frame.shape}")
                 except queue.Empty:
                     time.sleep(0.5)
                     continue
@@ -421,35 +442,51 @@ class AIDetectionSystem:
                 # 타겟 라벨 가져오기
                 target_labels = list(camera.target_labels.all())
                 if not target_labels:
+                    print(f"⚠️ 카메라 '{camera.name}'에 타겟 라벨이 없음")
                     time.sleep(2)
                     continue
+                
+                print(f"🎯 타겟 라벨 {len(target_labels)}개 로드")
                 
                 # 객체 탐지 수행
                 detections = self._detect_objects(frame, target_labels)
                 
                 # 탐지 결과 처리
-                for detection in detections:
-                    self._process_detection(camera, frame, detection, target_labels)
+                if detections:
+                    print(f"\n✨ 탐지 완료! {len(detections)}개 타겟 발견")
+                    for detection in detections:
+                        self._process_detection(camera, frame, detection, target_labels)
+                else:
+                    print(f"💤 탐지된 객체 없음")
                 
-                # 탐지 간격 (1-2초)
+                # 탐지 간격 (1.5초)
                 time.sleep(1.5)
                 
             except Exception as e:
                 print(f"❌ 탐지 워커 오류 (카메라: {camera.name}): {e}")
+                import traceback
+                traceback.print_exc()
                 time.sleep(2)
+        
+        print(f"🛑 탐지 워커 종료: 카메라 '{camera.name}'")
     
     def _detect_objects(self, frame, target_labels):
-        """프레임에서 객체 탐지"""
+        """프레임에서 객체 탐지 (디버그 로그 추가)"""
         detections = []
         
         if self.yolo_model is None or self.clip_model is None:
+            print("⚠️ 디버그: YOLO 또는 CLIP 모델이 로드되지 않음")
             return detections
         
         try:
+            print(f"\n🔍 디버그: 객체 탐지 시작")
+            print(f"  - 타겟 라벨: {[f'{tl.display_name}({tl.label_name})' for tl in target_labels]}")
+            
             # YOLO로 1차 객체 탐지 (바운딩 박스 획득)
             results = self.yolo_model(frame, verbose=False)
             
             if not results or len(results) == 0:
+                print("  - YOLO 탐지 결과: 없음")
                 return detections
             
             yolo_result = results[0]
@@ -458,21 +495,37 @@ class AIDetectionSystem:
             if hasattr(yolo_result, 'boxes') and yolo_result.boxes is not None:
                 boxes = yolo_result.boxes.xyxy.cpu().numpy()  # 바운딩 박스 좌표
                 confidences = yolo_result.boxes.conf.cpu().numpy() if yolo_result.boxes.conf is not None else []
+                classes = yolo_result.boxes.cls.cpu().numpy() if yolo_result.boxes.cls is not None else []
+                
+                print(f"  - YOLO 탐지 수: {len(boxes)}개")
+                
+                # YOLO 클래스 이름 출력 (디버그용)
+                if len(classes) > 0:
+                    class_names = yolo_result.names if hasattr(yolo_result, 'names') else {}
+                    detected_classes = [class_names.get(int(cls), f'class_{int(cls)}') for cls in classes]
+                    print(f"  - YOLO 탐지 클래스: {detected_classes}")
+                    print(f"  - YOLO 신뢰도: {[f'{conf:.2f}' for conf in confidences]}")
                 
                 # 신뢰도 0.5 이상인 바운딩 박스만 사용
                 high_conf_mask = confidences >= 0.5
                 valid_boxes = boxes[high_conf_mask]
+                valid_confidences = confidences[high_conf_mask]
+                
+                print(f"  - 신뢰도 0.5 이상: {len(valid_boxes)}개")
                 
                 if len(valid_boxes) == 0:
                     return detections
                 
                 # 각 타겟 라벨에 대해 CLIP으로 분류
                 for target_label in target_labels:
+                    print(f"\n  📍 타겟 라벨 '{target_label.display_name}' ({target_label.label_name}) 검사:")
+                    
                     clip_count = 0
                     total_confidence = 0
+                    box_details = []
                     
                     # 각 바운딩 박스 영역을 CLIP으로 분류
-                    for box in valid_boxes:
+                    for idx, (box, yolo_conf) in enumerate(zip(valid_boxes, valid_confidences)):
                         x1, y1, x2, y2 = map(int, box)
                         
                         # 바운딩 박스 영역 추출
@@ -494,10 +547,26 @@ class AIDetectionSystem:
                                 # 유사도 계산
                                 similarity = (crop_features @ text_features.T).cpu().numpy()[0][0]
                                 
+                                box_details.append({
+                                    'box_idx': idx,
+                                    'coords': f"({x1},{y1})-({x2},{y2})",
+                                    'yolo_conf': f"{yolo_conf:.2f}",
+                                    'clip_sim': f"{similarity:.3f}"
+                                })
+                                
                                 # CLIP 임계값 (0.2 이상이면 해당 객체로 판단)
                                 if similarity > 0.2:
                                     clip_count += 1
                                     total_confidence += similarity
+                                    print(f"     ✅ Box{idx}: CLIP 매칭! (유사도: {similarity:.3f})")
+                                else:
+                                    print(f"     ❌ Box{idx}: CLIP 미매칭 (유사도: {similarity:.3f})")
+                    
+                    # 박스별 상세 정보 출력
+                    print(f"     박스 상세:")
+                    for detail in box_details:
+                        print(f"       - Box{detail['box_idx']}: {detail['coords']}, "
+                            f"YOLO신뢰도={detail['yolo_conf']}, CLIP유사도={detail['clip_sim']}")
                     
                     # 해당 라벨로 분류된 객체가 있다면 탐지 결과에 추가
                     if clip_count > 0:
@@ -509,22 +578,44 @@ class AIDetectionSystem:
                             'count': clip_count,  # CLIP으로 정확히 센 개수
                             'has_alert': target_label.has_alert
                         })
+                        
+                        print(f"     🎯 최종 탐지: {clip_count}개 (평균 신뢰도: {avg_confidence:.3f})")
+                        print(f"     🚨 알림 설정: {'활성화' if target_label.has_alert else '비활성화'}")
+                    else:
+                        print(f"     ⭕ 탐지되지 않음")
+            
+            print(f"\n📊 전체 탐지 결과: {len(detections)}개 타겟 발견")
+            for det in detections:
+                print(f"  - {det['label'].display_name}: {det['count']}개 (신뢰도: {det['confidence']:.3f})")
         
         except Exception as e:
             print(f"❌ 객체 탐지 오류: {e}")
+            import traceback
+            traceback.print_exc()
         
         return detections
-    
+
     
     def _process_detection(self, camera, frame, detection, target_labels):
-        """탐지 결과 처리 (로그 저장, 알림, 스크린샷)"""
+        """탐지 결과 처리 (로그 저장, 알림, 스크린샷) - 디버그 추가"""
         from .models import DetectionLog
         
         try:
+            print(f"\n📝 탐지 결과 처리:")
+            print(f"  - 카메라: {camera.name}")
+            print(f"  - 객체: {detection['label'].display_name}")
+            print(f"  - 개수: {detection['count']}")
+            print(f"  - 신뢰도: {detection['confidence']:.3f}")
+            print(f"  - 알림 여부: {'예' if detection['has_alert'] else '아니오'}")
+            
             # 스크린샷 저장 (has_alert인 경우)
             screenshot_path = None
             if detection['has_alert']:
                 screenshot_path = self._save_screenshot(camera, frame, detection)
+                if screenshot_path:
+                    print(f"  - 📸 스크린샷 저장: {screenshot_path}")
+                else:
+                    print(f"  - ⚠️ 스크린샷 저장 실패")
             
             # 탐지 로그 저장
             log = DetectionLog.objects.create(
@@ -538,15 +629,21 @@ class AIDetectionSystem:
                 screenshot_path=screenshot_path
             )
             
+            print(f"  - 💾 DB 로그 저장 완료 (ID: {log.id})")
+            
             # 실시간 알림 전송 (has_alert인 경우)
             if detection['has_alert']:
                 self._send_realtime_alert(log)
+                print(f"  - 📢 실시간 알림 전송 완료")
             
             print(f"🎯 탐지 로그: {log}")
             
         except Exception as e:
             print(f"❌ 탐지 결과 처리 오류: {e}")
+            import traceback
+            traceback.print_exc()
     
+
     def _save_screenshot(self, camera, frame, detection):
         """스크린샷 저장"""
         try:
