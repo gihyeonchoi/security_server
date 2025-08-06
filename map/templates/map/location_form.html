@@ -1,7 +1,12 @@
 {% extends 'map/base.html' %}
+{% load static %}
 
 {% block title %}
     {% if object %}위치 수정{% else %}위치 추가{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'map/css/map_admin.css' %}">
 {% endblock %}
 
 {% block content %}

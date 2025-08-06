@@ -8,7 +8,9 @@ urlpatterns = [
     # 지도 보기
     path('', views.map_view, name='map_view'),
     path('location/', views.location_api, name='location_api'),
-    
+    # GPS 신호 절단
+    path('location-cutoff/', views.location_api_cutoff, name='location_api_cutoff'), # 서버주소/map/location-cutoff/
+
     # 위치 관리
     path('locations/', views.LocationListView.as_view(), name='location_list'),
     path('locations/create/', views.LocationCreateView.as_view(), name='location_create'),
@@ -30,4 +32,6 @@ urlpatterns = [
     # 드래그 앤 드롭 관리
     path('floors/<int:floor_id>/camera-manager/', views.camera_position_manager, name='camera_position_manager'),
     path('camera-positions/<int:position_id>/update-position/', views.update_camera_position, name='update_camera_position'),
+
+    
 ]
