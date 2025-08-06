@@ -1,5 +1,6 @@
 from django.db import models
 from django.urls import reverse
+import math
 
 
 class Location(models.Model):
@@ -7,6 +8,17 @@ class Location(models.Model):
     name = models.CharField(max_length=100, help_text="건물명 (예: 대학본부, 공학관)")
     address = models.CharField(max_length=200, blank=True, help_text="주소")
     description = models.TextField(blank=True, help_text="설명")
+    
+    # GPS 고도 기준 정보
+    base_floor_altitude = models.FloatField(
+        null=False, blank=False, 
+        help_text="1층 기준 GPS 고도 (미터, 예: 100.0)"
+    )
+    floor_height_interval = models.FloatField(
+        null=False, blank=False, 
+        help_text="층간 높이 간격 (미터, 예: 1.5)"
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
@@ -16,6 +28,19 @@ class Location(models.Model):
     
     def __str__(self):
         return self.name
+    
+    def calculate_floor_from_altitude(self, altitude):
+        """GPS 고도로부터 층수 계산"""
+        if not self.base_floor_altitude or not self.floor_height_interval:
+            return None
+        
+        height_diff = altitude - self.base_floor_altitude
+        
+        # 층수 계산 (반올림 대신 내림 처리)
+        floor_offset = math.floor(height_diff / self.floor_height_interval)
+        
+        # 실제 층수 반환
+        return 1 + floor_offset
 
 
 class Floor(models.Model):

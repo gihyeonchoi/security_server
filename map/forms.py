@@ -7,12 +7,36 @@ from CCTV.models import Camera
 class LocationForm(forms.ModelForm):
     class Meta:
         model = Location
-        fields = ['name', 'address', 'description']
+        fields = ['name', 'address', 'description', 'base_floor_altitude', 'floor_height_interval']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': '위치명을 입력하세요'}),
             'address': forms.TextInput(attrs={'class': 'form-control', 'placeholder': '주소를 입력하세요 (선택사항)'}),
-            'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': '설명을 입력하세요 (선택사항)'})
+            'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': '설명을 입력하세요 (선택사항)'}),
+            'base_floor_altitude': forms.NumberInput(attrs={
+                'class': 'form-control', 
+                'step': '0.1', 
+                'placeholder': '예: 100.0 (미터)'
+            }),
+            'floor_height_interval': forms.NumberInput(attrs={
+                'class': 'form-control', 
+                'step': '0.1', 
+                'placeholder': '예: 1.5 (미터)'
+            })
         }
+    
+    def clean(self):
+        cleaned_data = super().clean()
+        base_altitude = cleaned_data.get('base_floor_altitude')
+        floor_interval = cleaned_data.get('floor_height_interval')
+        
+        # 둘 다 입력되거나 둘 다 비어있어야 함
+        if (base_altitude is not None) != (floor_interval is not None):
+            raise ValidationError("1층 기준 고도와 층간 간격은 함께 입력하거나 함께 비워두어야 합니다.")
+        
+        if floor_interval is not None and floor_interval <= 0:
+            raise ValidationError({'floor_height_interval': '층간 간격은 0보다 큰 값이어야 합니다.'})
+        
+        return cleaned_data
 
 
 class FloorForm(forms.ModelForm):

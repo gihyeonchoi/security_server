@@ -38,18 +38,40 @@
             height: auto;
             display: block;
         }
-        #location-dot {
+        .location-dot {
             position: absolute;
             width: 15px;
             height: 15px;
-            background-color: #ff4757;
             border-radius: 50%;
             border: 2px solid white;
-            box-shadow: 0 0 8px rgba(255, 71, 87, 0.8);
+            box-shadow: 0 0 8px rgba(0, 0, 0, 0.3);
             transform: translate(-50%, -50%);
             display: none;
             transition: top 0.5s ease-in-out, left 0.5s ease-in-out;
             z-index: 10;
+            cursor: pointer;
+        }
+        
+        .location-dot:hover {
+            transform: translate(-50%, -50%) scale(1.2);
+            box-shadow: 0 0 12px rgba(0, 0, 0, 0.5);
+        }
+        
+        /* 각 사용자별 점에 애니메이션 효과 */
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 8px rgba(255, 255, 255, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+            }
+        }
+        
+        .location-dot {
+            animation: pulse 2s infinite;
         }
         #controls {
             margin-bottom: 20px;
@@ -160,7 +182,7 @@
          data-bottom-right-lon="{{ floor.bottom_right_lon }}">
     {% endfor %}
     
-    <div id="location-dot"></div>
+    <!-- 사용자 위치 점들은 JavaScript에서 동적으로 생성됩니다 -->
 
     <!-- 동적 카메라 아이콘 렌더링 -->
     {% for floor in floors %}
@@ -186,6 +208,10 @@
         let currentFloorData = null;
         const locationApiUrl = '/map/location/';
         const UPDATE_INTERVAL = 3000;
+        const currentLocationId = {% if location %}{{ location.id }}{% else %}null{% endif %};
+        
+        // 사용자별 점 저장 객체
+        let userDots = {};
         
         // 현재 층의 GPS 데이터 가져오기
         function getCurrentFloorGPS() {
@@ -205,7 +231,6 @@
         }
 
         // --- DOM 요소 ---
-        const locationDot = document.getElementById('location-dot');
         const statusDiv = document.getElementById('status');
         const floorButtons = document.querySelectorAll('#controls button');
         const cameraIcons = document.querySelectorAll('.camera-icon');
@@ -241,6 +266,12 @@
             cameraIcons.forEach(icon => {
                 const iconFloorId = icon.dataset.floorId;
                 icon.classList.toggle('hidden', iconFloorId != floorId);
+            });
+
+            // 사용자 점들 층별로 보이기/숨기기
+            Object.values(userDots).forEach(dot => {
+                const dotFloor = parseInt(dot.getAttribute('data-floor'));
+                dot.style.display = (dotFloor === floorNumber) ? 'block' : 'none';
             });
 
             updateLocation();
@@ -290,40 +321,110 @@
         }
 
         /**
-         * 서버에서 위치를 가져와 점을 업데이트하는 메인 함수
+         * 사용자별 점 생성/업데이트 함수
+         */
+        function createOrUpdateUserDot(deviceId, pixelCoords, floorNumber) {
+            const mapContainer = document.getElementById('map-container');
+            
+            if (!userDots[deviceId]) {
+                // 새 점 생성
+                const dot = document.createElement('div');
+                dot.id = `user-dot-${deviceId}`;
+                dot.className = 'location-dot';
+                dot.setAttribute('data-device-id', deviceId);
+                dot.setAttribute('data-floor', floorNumber);
+                
+                // 각 사용자별로 다른 색상 (해시 기반)
+                const colors = ['#ff4757', '#2ed573', '#3742fa', '#ff6348', '#2f3542', '#ff9ff3', '#54a0ff'];
+                const colorIndex = deviceId.split('').reduce((a, b) => a + b.charCodeAt(0), 0) % colors.length;
+                dot.style.backgroundColor = colors[colorIndex];
+                
+                mapContainer.appendChild(dot);
+                userDots[deviceId] = dot;
+            }
+            
+            const dot = userDots[deviceId];
+            dot.style.left = `${pixelCoords.x}px`;
+            dot.style.top = `${pixelCoords.y}px`;
+            dot.style.display = 'block';
+            dot.setAttribute('data-floor', floorNumber);
+            
+            // 현재 층이 아니면 숨김
+            if (floorNumber !== currentFloorNumber) {
+                dot.style.display = 'none';
+            }
+        }
+
+        /**
+         * 비활성 사용자 점 제거
+         */
+        function removeUserDot(deviceId) {
+            if (userDots[deviceId]) {
+                userDots[deviceId].remove();
+                delete userDots[deviceId];
+            }
+        }
+
+        /**
+         * 서버에서 다중 사용자 위치를 가져와 점들을 업데이트하는 메인 함수
          */
         async function updateLocation() {
             try {
-                const response = await fetch(locationApiUrl);
+                const apiUrl = currentLocationId ? 
+                    `${locationApiUrl}?location_id=${currentLocationId}` : 
+                    locationApiUrl;
+                    
+                const response = await fetch(apiUrl);
                 
                 if (!response.ok) throw new Error(`서버 응답 오류: ${response.status}`);
                 
-                const locationData = await response.json();
-                console.log("✅ 서버에서 받은 GPS:", locationData); // <-- 이 줄을 추가!
-                if (locationData.latitude === null || locationData.longitude === null || locationData.altitude === null) {
-                    throw new Error("서버에 아직 유효한 위치 정보가 없습니다.");
+                const data = await response.json();
+                const userLocations = data.user_locations || {};
+                const totalUsers = data.total_users || 0;
+                
+                console.log(`✅ 서버에서 받은 GPS: ${totalUsers}명의 사용자`, userLocations);
+                
+                if (totalUsers === 0) {
+                    statusDiv.textContent = "현재 활성 사용자가 없습니다.";
+                    // 모든 점 숨기기
+                    Object.values(userDots).forEach(dot => dot.style.display = 'none');
+                    return;
                 }
 
-                if (locationData.altitude == currentFloorNumber) {
-                    statusDiv.textContent = `위치 수신: ${locationData.altitude}층 (현재 층과 일치)`;
-                    const pixelCoords = mapGpsToPixels(locationData.latitude, locationData.longitude);
-                    
-                    if (pixelCoords) {
-                        locationDot.style.left = `${pixelCoords.x}px`;
-                        locationDot.style.top = `${pixelCoords.y}px`;
-                        locationDot.style.display = 'block';
-                    } else {
-                        locationDot.style.display = 'none';
-                        statusDiv.textContent += ' (지도 범위 벗어남 또는 GPS 데이터 없음)';
+                // 기존 점들 상태 업데이트
+                const activeDeviceIds = Object.keys(userLocations);
+                
+                // 서버에 없는 사용자들의 점 제거
+                Object.keys(userDots).forEach(deviceId => {
+                    if (!activeDeviceIds.includes(deviceId)) {
+                        removeUserDot(deviceId);
                     }
-                } else {
-                    locationDot.style.display = 'none';
-                    statusDiv.textContent = `위치 수신: ${locationData.altitude}층 (현재 ${currentFloorNumber}층과 달라 숨김)`;
-                }
+                });
+
+                let visibleUsers = 0;
+                
+                // 각 사용자별 점 업데이트
+                Object.entries(userLocations).forEach(([deviceId, locationData]) => {
+                    const calculatedFloor = locationData.calculated_floor;
+                    
+                    if (calculatedFloor === currentFloorNumber) {
+                        const pixelCoords = mapGpsToPixels(locationData.latitude, locationData.longitude);
+                        
+                        if (pixelCoords) {
+                            createOrUpdateUserDot(deviceId, pixelCoords, calculatedFloor);
+                            visibleUsers++;
+                        }
+                    } else if (userDots[deviceId]) {
+                        // 다른 층에 있는 사용자는 점을 숨김
+                        userDots[deviceId].style.display = 'none';
+                    }
+                });
+                
+                statusDiv.textContent = `현재 ${currentFloorNumber}층에 ${visibleUsers}명, 전체 ${totalUsers}명 활성`;
+                
             } catch (error) {
                 console.error('위치 정보 업데이트 실패:', error);
-                statusDiv.textContent = error.message;
-                locationDot.style.display = 'none';
+                statusDiv.textContent = `오류: ${error.message}`;
             }
         }
         
