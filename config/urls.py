@@ -27,6 +27,7 @@ urlpatterns = [
     path('cctv/', include('CCTV.urls')),
     path('CCTV/', include('CCTV.urls')),  # 대문자도 지원
     path('map/', include('map.urls')),
+    path('', include('map.urls')),
 ]
 
 # 개발 환경에서 정적 파일 서빙

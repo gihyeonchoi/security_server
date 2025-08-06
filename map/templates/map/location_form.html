@@ -57,6 +57,41 @@
                             {% endif %}
                         </div>
 
+                        <hr>
+                        <h5>GPS 고도 설정 (선택사항)</h5>
+                        <p class="text-muted">실시간 위치 추적을 위한 GPS 고도 기준 정보를 설정하세요.</p>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.base_floor_altitude.id_for_label }}" class="form-label">{{ form.base_floor_altitude.label }}</label>
+                                    {{ form.base_floor_altitude }}
+                                    {% if form.base_floor_altitude.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.base_floor_altitude.errors %}
+                                                <small>{{ error }}</small>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    <div class="form-text">1층에서 측정된 GPS 고도값 (미터)</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.floor_height_interval.id_for_label }}" class="form-label">{{ form.floor_height_interval.label }}</label>
+                                    {{ form.floor_height_interval }}
+                                    {% if form.floor_height_interval.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.floor_height_interval.errors %}
+                                                <small>{{ error }}</small>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    <div class="form-text">층간 높이 간격 (미터, 예: 1.5)</div>
+                                </div>
+                            </div>
+                        </div>
+
                         {% if form.non_field_errors %}
                             <div class="alert alert-danger">
                                 {% for error in form.non_field_errors %}

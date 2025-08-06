@@ -13,43 +13,98 @@ from CCTV.models import Camera
 from .models import Location, Floor, CameraPosition
 from .forms import LocationForm, FloorForm, CameraPositionForm, CameraPositionUpdateForm
 import json
+from datetime import datetime, timedelta
+from django.utils import timezone
 
-# Flask의 전역 변수처럼, 서버가 실행되는 동안 위치를 메모리에 저장합니다.
-# (주의: 서버가 재시작되면 정보는 초기화됩니다.)
-latest_location = {
-    "latitude": None,
-    "longitude": None,
-    "altitude": None
-}
+# 다중 사용자 위치 정보를 메모리에 저장
+# {device_id: {"latitude": float, "longitude": float, "altitude": float, "last_update": datetime, "calculated_floor": int}}
+user_locations = {}
 
-# 외부 장치에서 CSRF 토큰 없이 POST 요청을 보내므로, 이 View에 대해서만 CSRF 보호를 비활성화합니다.
+# 5초 타임아웃으로 비활성 사용자 정리
+def cleanup_inactive_users():
+    global user_locations
+    current_time = timezone.now()
+    timeout_threshold = current_time - timedelta(seconds=5)
+    
+    # 5초 이상 신호가 없는 사용자들 제거
+    inactive_users = [
+        device_id for device_id, data in user_locations.items()
+        if data['last_update'] < timeout_threshold
+    ]
+    
+    for device_id in inactive_users:
+        del user_locations[device_id]
+        print(f"⏰ 타임아웃: {device_id} 사용자 제거")
+
 @csrf_exempt
 def location_api(request):
-    global latest_location
+    global user_locations
+    
+    # 비활성 사용자 정리
+    cleanup_inactive_users()
 
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
+            device_id = data.get('device_id')
             latitude = data.get('latitude')
             longitude = data.get('longitude')
             altitude = data.get('altitude')
+            location_id = data.get('location_id')  # 어떤 위치인지 지정
+
+            if not device_id:
+                return JsonResponse({"status": "error", "message": "device_id is required"}, status=400)
 
             if latitude is not None and longitude is not None and altitude is not None:
-                latest_location = {
+                # 층수 계산을 위해 Location 정보 가져오기
+                calculated_floor = None
+                if location_id:
+                    try:
+                        location = Location.objects.get(id=location_id)
+                        calculated_floor = location.calculate_floor_from_altitude(altitude)
+                    except Location.DoesNotExist:
+                        pass
+
+                user_locations[device_id] = {
                     "latitude": latitude,
                     "longitude": longitude,
-                    "altitude": altitude
+                    "altitude": altitude,
+                    "calculated_floor": calculated_floor,
+                    "location_id": location_id,
+                    "last_update": timezone.now()
                 }
-                print(f"📡 POST 수신: {latest_location}")
-                return JsonResponse({"status": "ok", "message": "Location received"})
+                
+                print(f"📡 POST 수신 [{device_id}]: 위도={latitude}, 경도={longitude}, 고도={altitude}, 층={calculated_floor}")
+                return JsonResponse({
+                    "status": "ok", 
+                    "message": "Location received",
+                    "calculated_floor": calculated_floor,
+                    "active_users": len(user_locations)
+                })
             else:
-                return JsonResponse({"status": "error", "message": "Missing location data"}, status=400)
+                return JsonResponse({"status": "error", "message": "Missing location data (latitude, longitude, altitude required)"}, status=400)
         except json.JSONDecodeError:
             return JsonResponse({"status": "error", "message": "Invalid JSON"}, status=400)
     
     elif request.method == 'GET':
-        # print(f"🛰️ GET 요청: 저장된 위치 전송 - {latest_location}")
-        return JsonResponse(latest_location)
+        # 모든 활성 사용자 위치 정보 반환
+        location_id = request.GET.get('location_id')
+        
+        # 특정 location에 대한 사용자들만 필터링
+        filtered_locations = {}
+        if location_id:
+            filtered_locations = {
+                device_id: data for device_id, data in user_locations.items()
+                if data.get('location_id') == int(location_id)
+            }
+        else:
+            filtered_locations = user_locations
+            
+        print(f"🛰️ GET 요청: {len(filtered_locations)}명의 활성 사용자 정보 전송")
+        return JsonResponse({
+                "user_locations": filtered_locations,
+                "total_users": len(filtered_locations)
+        })
     
 @login_required    
 def map_view(request):
