@@ -22,9 +22,6 @@ latest_location = {
     "altitude": None
 }
 
-def map_view(request):
-    return render(request, 'map/map.html')
-
 # 외부 장치에서 CSRF 토큰 없이 POST 요청을 보내므로, 이 View에 대해서만 CSRF 보호를 비활성화합니다.
 @csrf_exempt
 def location_api(request):
@@ -54,6 +51,7 @@ def location_api(request):
         # print(f"🛰️ GET 요청: 저장된 위치 전송 - {latest_location}")
         return JsonResponse(latest_location)
     
+@login_required    
 def map_view(request):
     """동적 지도 보기 - 데이터베이스에서 위치, 층, 카메라 정보를 가져옴"""
     # 기본 위치 선택 (첫 번째 위치 또는 요청 파라미터로 지정)

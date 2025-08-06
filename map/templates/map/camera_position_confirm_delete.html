@@ -1,6 +1,11 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}카메라 위치 삭제 확인{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'map/css/map_admin.css' %}">
+{% endblock %}
 
 {% block content %}
 <div class="container">
