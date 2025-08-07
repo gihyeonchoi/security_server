@@ -3,6 +3,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.views import login_required
 from django.http import StreamingHttpResponse, JsonResponse, HttpResponse
 from django.contrib import messages
+from django.views.decorators.http import require_http_methods
 from .models import Camera, TargetLabel, DetectionLog
 from .utils import camera_streamer, ai_detection_system
 import json
@@ -284,3 +285,39 @@ def stop_detection(request):
             messages.error(request, f'AI 탐지 중지 실패: {str(e)}')
     
     return redirect('cctv:index')
+
+@require_http_methods(["GET"])
+def background_streaming_status(request):
+    """백그라운드 스트리밍 상태 확인"""
+    try:
+        from .models import Camera
+        cameras = Camera.objects.all()
+        
+        status_data = []
+        for camera in cameras:
+            is_background = camera_streamer.is_background_streaming(camera.rtsp_url)
+            camera_status = camera_streamer.get_camera_status(camera.rtsp_url)
+            
+            status_data.append({
+                'id': camera.id,
+                'name': camera.name,
+                'location': camera.location,
+                'rtsp_url': camera.rtsp_url,
+                'background_streaming': is_background,
+                'is_connected': camera_status.get('is_connected', False),
+                'avg_fps': camera_status.get('avg_fps', 0),
+                'stream_count': camera_status.get('stream_count', 0)
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'cameras': status_data,
+            'total_cameras': len(cameras),
+            'background_active': sum(1 for data in status_data if data['background_streaming'])
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)

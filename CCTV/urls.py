@@ -29,6 +29,9 @@ urlpatterns = [
     path('detection/start/', views.start_detection, name='start_detection'),
     path('detection/stop/', views.stop_detection, name='stop_detection'),
     
+    # 백그라운드 스트리밍 상태
+    path('api/background-streaming-status/', views.background_streaming_status, name='background_streaming_status'),
+    
     # 실시간 알림 (SSE)
     path('alerts/stream/', views.detection_alerts_stream, name='detection_alerts_stream'),
 ]

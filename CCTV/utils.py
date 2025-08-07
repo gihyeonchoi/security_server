@@ -22,9 +22,17 @@ class CameraStreamer:
         self.active_streams = {}
         self.frame_queues = {}
         self.reader_threads = {}
+        self.background_streaming = {}  # 백그라운드 스트리밍 상태 추적
     
     def get_camera_stream(self, rtsp_url):
-        with self.global_lock:
+        # print(f"🔐 global_lock 획득 시도: {rtsp_url}")
+        
+        # 락 획득 시도 (타임아웃 5초)
+        lock_acquired = self.global_lock.acquire(timeout=5.0)
+        if not lock_acquired:
+            # print(f"❌ global_lock 획득 실패 (타임아웃): {rtsp_url}")
+            pass
+            # 임시로 기본 카메라 정보 반환
             if rtsp_url not in self.cameras:
                 self.cameras[rtsp_url] = {
                     'cap': None,
@@ -39,9 +47,31 @@ class CameraStreamer:
                     'reconnect_attempts': 0,
                     'last_reconnect_time': 0
                 }
-                # 각 카메라별 프레임 큐 생성 (최대 2개 프레임만 보관)
-                self.frame_queues[rtsp_url] = queue.Queue(maxsize=2)
+                self.frame_queues[rtsp_url] = queue.Queue(maxsize=5)
             return self.cameras[rtsp_url]
+        
+        try:
+            # print(f"✅ global_lock 획득 성공: {rtsp_url}")
+            if rtsp_url not in self.cameras:
+                self.cameras[rtsp_url] = {
+                    'cap': None,
+                    'is_connected': False,
+                    'last_frame': None,
+                    'fps_counter': 0,
+                    'last_fps_time': time.time(),
+                    'avg_fps': 0,
+                    'tracker_count': 0,
+                    'lock': threading.Lock(),
+                    'stream_count': 0,
+                    'reconnect_attempts': 0,
+                    'last_reconnect_time': 0
+                }
+                # 각 카메라별 프레임 큐 생성 (백그라운드 모드를 위해 약간 더 큰 큐)
+                self.frame_queues[rtsp_url] = queue.Queue(maxsize=5)
+            return self.cameras[rtsp_url]
+        finally:
+            self.global_lock.release()
+            # print(f"🔓 global_lock 해제: {rtsp_url}")
     
     def connect_camera(self, rtsp_url):
         camera_info = self.get_camera_stream(rtsp_url)
@@ -127,7 +157,9 @@ class CameraStreamer:
                     break
                 stream_count = camera_info['stream_count']
             
-            if stream_count <= 0:
+            # 백그라운드 스트리밍 모드이거나 실제 시청자가 있는 경우에만 프레임 읽기
+            is_background = self.background_streaming.get(rtsp_url, False)
+            if stream_count <= 0 and not is_background:
                 time.sleep(0.1)
                 continue
             
@@ -167,33 +199,63 @@ class CameraStreamer:
                                 camera_info['cap'] = None
                         break
                 
-                # CPU 부하 감소를 위한 짧은 대기
-                time.sleep(0.001)
+                # 백그라운드 모드에서는 더 적은 CPU 사용을 위해 대기 시간 조정
+                is_background_only = self.background_streaming.get(rtsp_url, False) and stream_count <= 1
+                if is_background_only:
+                    time.sleep(0.04)  # 백그라운드 전용 모드: 25 FPS
+                else:
+                    time.sleep(0.001)  # 실시간 스트리밍 모드: 고성능
                 
             except Exception as e:
-                print(f"Frame reading error: {e}")
+                print(f"Frame reading error for {rtsp_url}: {e}")
                 consecutive_failures += 1
                 if consecutive_failures > 10:
+                    print(f"⚠️ 연속 실패 10회 초과 - 카메라 연결 해제: {rtsp_url}")
                     with camera_info['lock']:
                         camera_info['is_connected'] = False
                         if camera_info['cap']:
-                            camera_info['cap'].release()
+                            try:
+                                camera_info['cap'].release()
+                            except:
+                                pass
                             camera_info['cap'] = None
                     break
+                time.sleep(0.5)  # 에러 시 짧은 대기
     
     def generate_frames(self, rtsp_url):
-        camera_info = self.get_camera_stream(rtsp_url)
-        frame_queue = self.frame_queues.get(rtsp_url)
+        # print(f"🎬 generate_frames 시작: {rtsp_url}")
         
-        with camera_info['lock']:
-            camera_info['stream_count'] += 1
+        try:
+            # print(f"🔍 카메라 정보 가져오는 중...")
+            camera_info = self.get_camera_stream(rtsp_url)
+            # print(f"✅ 카메라 정보 획득 완료")
+            
+            # print(f"🔍 프레임 큐 가져오는 중...")
+            frame_queue = self.frame_queues.get(rtsp_url)
+            # print(f"📊 프레임 큐 상태: {frame_queue is not None}")
+            
+            # print(f"🔒 카메라 락 획득 시도...")
+            with camera_info['lock']:
+                camera_info['stream_count'] += 1
+                # print(f"📈 stream_count 증가: {camera_info['stream_count']}")
+                
+        except Exception as e:
+            print(f"❌ generate_frames 초기화 오류: {e}")
+            import traceback
+            traceback.print_exc()
+            return
         
         last_frame = None
         error_count = 0
         
         try:
             while True:
-                if not self.connect_camera(rtsp_url):
+                connection_result = self.connect_camera(rtsp_url)
+                # print(f"🔌 카메라 연결 상태: {connection_result}")
+                
+                if not connection_result:
+                    # print(f"❌ 카메라 연결 실패 - 에러 프레임 전송")
+                    pass
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + 
                            self.get_error_frame("Camera Disconnected") + b'\r\n')
@@ -202,10 +264,14 @@ class CameraStreamer:
                 
                 try:
                     # 큐에서 최신 프레임 가져오기 (타임아웃 설정)
+                    # print(f"📥 프레임 큐에서 데이터 대기 중...")
                     frame = frame_queue.get(timeout=0.5)
+                    # print(f"✅ 프레임 수신 성공: {frame.shape if frame is not None else 'None'}")
                     last_frame = frame
                     error_count = 0
                 except queue.Empty:
+                    # print(f"⏰ 프레임 큐 타임아웃 (에러 카운트: {error_count + 1})")
+                    pass
                     error_count += 1
                     if error_count > 10:
                         # 10회 이상 프레임을 못 받으면 연결 문제로 판단
@@ -239,8 +305,10 @@ class CameraStreamer:
         finally:
             with camera_info['lock']:
                 camera_info['stream_count'] -= 1
-                if camera_info['stream_count'] <= 0:
-                    # 모든 스트림이 종료되면 리소스 정리
+                # 백그라운드 스트리밍이 활성화되어 있으면 카메라 리소스 정리하지 않음
+                is_background = self.background_streaming.get(rtsp_url, False)
+                if camera_info['stream_count'] <= 0 and not is_background:
+                    # 웹 스트림이 모두 종료되고 백그라운드도 비활성이면 카메라 연결 해제
                     if camera_info['cap']:
                         camera_info['cap'].release()
                         camera_info['cap'] = None
@@ -316,6 +384,73 @@ class CameraStreamer:
                     del self.frame_queues[rtsp_url]
                 
                 del self.cameras[rtsp_url]
+    
+    def start_background_streaming(self, rtsp_url):
+        """백그라운드 연속 스트리밍 시작"""
+        print(f"🔄 백그라운드 스트리밍 시작 시도: {rtsp_url}")
+        
+        # 락 타임아웃으로 데드락 방지
+        if self.global_lock.acquire(timeout=3.0):
+            try:
+                self.background_streaming[rtsp_url] = True
+                print(f"🔄 백그라운드 스트리밍 플래그 설정: {rtsp_url}")
+            finally:
+                self.global_lock.release()
+        else:
+            print(f"⚠️ 백그라운드 스트리밍 락 타임아웃: {rtsp_url}")
+            return False
+            
+        # 카메라 연결 확인 및 스트림 시작 (락 외부에서)
+        if self.connect_camera(rtsp_url):
+            print(f"✅ 백그라운드 스트리밍 활성화: {rtsp_url}")
+            return True
+        else:
+            print(f"❌ 백그라운드 스트리밍 실패 (연결 불가): {rtsp_url}")
+            return False
+    
+    def stop_background_streaming(self, rtsp_url):
+        """백그라운드 연속 스트리밍 중지"""
+        with self.global_lock:
+            if rtsp_url in self.background_streaming:
+                self.background_streaming[rtsp_url] = False
+                del self.background_streaming[rtsp_url]
+                print(f"⏹️ 백그라운드 스트리밍 중지: {rtsp_url}")
+    
+    def is_background_streaming(self, rtsp_url):
+        """백그라운드 스트리밍 상태 확인"""
+        return self.background_streaming.get(rtsp_url, False)
+    
+    def start_all_background_streaming(self):
+        """모든 카메라의 백그라운드 스트리밍 시작"""
+        from .models import Camera
+        cameras = Camera.objects.all()
+        
+        for camera in cameras:
+            try:
+                self.start_background_streaming(camera.rtsp_url)
+            except Exception as e:
+                print(f"❌ 카메라 '{camera.name}' 백그라운드 스트리밍 실패: {e}")
+    
+    def stop_all_background_streaming(self):
+        """모든 백그라운드 스트리밍 중지"""
+        rtsp_urls = list(self.background_streaming.keys())
+        for rtsp_url in rtsp_urls:
+            self.stop_background_streaming(rtsp_url)
+    
+    def cleanup_all_resources(self):
+        """모든 카메라 리소스 정리 (메모리 누수 방지)"""
+        print("🧹 모든 카메라 리소스 정리 시작...")
+        
+        # 모든 백그라운드 스트리밍 중지
+        self.stop_all_background_streaming()
+        
+        # 모든 카메라 연결 해제
+        with self.global_lock:
+            rtsp_urls = list(self.cameras.keys())
+            for rtsp_url in rtsp_urls:
+                self.cleanup_camera(rtsp_url)
+        
+        print("✅ 모든 카메라 리소스 정리 완료")
 
 class AIDetectionSystem:
     def __init__(self):
@@ -459,8 +594,9 @@ class AIDetectionSystem:
                 else:
                     print(f"💤 탐지된 객체 없음")
                 
-                # 탐지 간격 (1.5초)
-                time.sleep(1.5)
+                # 백그라운드 연속 모드에서는 탐지 간격을 늘려서 리소스 절약
+                detection_interval = 3.0 if camera_streamer.is_background_streaming(camera.rtsp_url) else 1.5
+                time.sleep(detection_interval)
                 
             except Exception as e:
                 print(f"❌ 탐지 워커 오류 (카메라: {camera.name}): {e}")
@@ -681,13 +817,21 @@ class AIDetectionSystem:
             pass  # 큐가 가득 찬 경우 무시
     
     def start_all_detections(self):
-        """모든 활성 카메라에 대한 탐지 시작"""
+        """모든 활성 카메라에 대한 탐지 시작 (자동 시작 모드)"""
         from .models import Camera
         
         cameras = Camera.objects.all()
+        started_count = 0
+        
         for camera in cameras:
-            if camera.target_labels.exists():  # 타겟 라벨이 있는 카메라만
+            # 타겟 라벨이 있는 카메라이거나, 자동 시작 모드에서는 모든 카메라 시작
+            if camera.target_labels.exists():
                 self.start_detection_for_camera(camera)
+                started_count += 1
+            else:
+                print(f"⚠️ 카메라 '{camera.name}'에 타겟 라벨이 없어 AI 탐지를 건너뜁니다")
+        
+        print(f"🤖 총 {started_count}개 카메라에서 AI 탐지 시작됨")
     
     def stop_all_detections(self):
         """모든 탐지 중지"""
