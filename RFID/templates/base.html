@@ -252,7 +252,7 @@
     <!-- 네비게이션 바 -->
     <nav class="navbar">
         <div class="nav-container">
-            <a href="/" class="nav-brand">폴리텍 출입 통제 시스템</a>
+            <a href="/" class="nav-brand">{테스트} 폴리텍 출입 통제 시스템</a>
             <ul class="nav-menu">
                 <li class="nav-item">
                     <a href="#" class="nav-link">카드 관리 ▼</a>
@@ -362,73 +362,181 @@
         
         // AI 탐지 실시간 알림 시스템 (SSE)
         let eventSource = null;
+        let shownAlerts = new Set();
+        let alertTimestamps = new Map();
+        let reconnectAttempts = 0;
+        let maxReconnectAttempts = 10;
+        let reconnectDelay = 1000; // 시작 지연시간 1초
         
         function initDetectionAlerts() {
+            // 기존 연결 정리
             if (eventSource) {
                 eventSource.close();
+                eventSource = null;
             }
             
-            eventSource = new EventSource('/cctv/alerts/stream/');
-            
-            eventSource.onopen = function(event) {
-                console.log('🔔 AI 탐지 알림 연결됨');
-            };
-            
-            eventSource.onmessage = function(event) {
+            // 세션 스토리지에서 표시한 알림 목록 복원
+            const storedAlerts = sessionStorage.getItem('shownAlerts');
+            if (storedAlerts) {
                 try {
-                    const data = JSON.parse(event.data);
-                    handleDetectionAlert(data);
+                    shownAlerts = new Set(JSON.parse(storedAlerts));
                 } catch (e) {
-                    console.error('알림 데이터 파싱 오류:', e);
+                    shownAlerts = new Set();
                 }
-            };
+            }
             
-            eventSource.onerror = function(event) {
-                console.error('❌ AI 탐지 알림 연결 오류:', event);
-                // 5초 후 재연결 시도
-                setTimeout(() => {
-                    if (eventSource.readyState === EventSource.CLOSED) {
-                        initDetectionAlerts();
+            // 알림 타임스탬프 복원
+            const storedTimestamps = sessionStorage.getItem('alertTimestamps');
+            if (storedTimestamps) {
+                try {
+                    alertTimestamps = new Map(JSON.parse(storedTimestamps));
+                    // 24시간 이상 된 알림 제거
+                    const now = Date.now();
+                    for (const [alertId, timestamp] of alertTimestamps.entries()) {
+                        if (now - timestamp > 24 * 60 * 60 * 1000) {
+                            alertTimestamps.delete(alertId);
+                            shownAlerts.delete(alertId);
+                        }
                     }
+                } catch (e) {
+                    alertTimestamps = new Map();
+                }
+            }
+            
+            try {
+                console.log('🔄 SSE 연결 시도...');
+                eventSource = new EventSource('/cctv/alerts/stream/');
+                
+                eventSource.onopen = function(event) {
+                    console.log('✅ AI 탐지 알림 연결됨');
+                    reconnectAttempts = 0;
+                    reconnectDelay = 1000;
+                };
+                
+                eventSource.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        handleDetectionAlert(data);
+                    } catch (e) {
+                        console.error('알림 데이터 파싱 오류:', e);
+                    }
+                };
+                
+                eventSource.onerror = function(event) {
+                    console.error('❌ SSE 연결 오류', event);
+                    
+                    if (eventSource.readyState === EventSource.CLOSED) {
+                        eventSource = null;
+                        
+                        // 재연결 시도
+                        if (reconnectAttempts < maxReconnectAttempts) {
+                            reconnectAttempts++;
+                            console.log(`🔄 재연결 시도 ${reconnectAttempts}/${maxReconnectAttempts} (${reconnectDelay}ms 후)`);
+                            
+                            setTimeout(() => {
+                                initDetectionAlerts();
+                            }, reconnectDelay);
+                            
+                            // 지수 백오프 (최대 30초)
+                            reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+                        } else {
+                            console.error('❌ 최대 재연결 시도 횟수 초과');
+                            showConnectionError();
+                        }
+                    }
+                };
+                
+            } catch (e) {
+                console.error('SSE 초기화 오류:', e);
+                setTimeout(() => {
+                    initDetectionAlerts();
                 }, 5000);
-            };
+            }
         }
         
         function handleDetectionAlert(data) {
+            console.log('📬 알림 수신:', data);
+            
             if (data.type === 'detection_alert') {
-                showDetectionNotification(data);
-                playAlertSound();
+                // 알림 ID 생성
+                const alertId = `${data.id}_${data.detected_at}`;
+                
+                // 이미 표시한 알림인지 확인
+                if (shownAlerts.has(alertId)) {
+                    console.log('이미 표시된 알림, 무시:', alertId);
+                    return;
+                }
+                
+                // 새 알림이거나 최근 알림인 경우만 표시
+                if (data.is_new || data.is_recent) {
+                    console.log('🚨 새 알림 표시:', data.detected_object);
+                    
+                    // 알림 표시
+                    showDetectionNotification(data);
+                    playAlertSound();
+                    
+                    // 표시한 알림으로 기록
+                    shownAlerts.add(alertId);
+                    alertTimestamps.set(alertId, Date.now());
+                    
+                    // 세션 스토리지에 저장
+                    try {
+                        sessionStorage.setItem('shownAlerts', JSON.stringify([...shownAlerts]));
+                        sessionStorage.setItem('alertTimestamps', JSON.stringify([...alertTimestamps]));
+                    } catch (e) {
+                        console.error('세션 스토리지 저장 실패:', e);
+                    }
+                    
+                    // 메모리 관리
+                    if (shownAlerts.size > 100) {
+                        const sortedAlerts = [...alertTimestamps.entries()]
+                            .sort((a, b) => a[1] - b[1]);
+                        const toRemove = sortedAlerts.slice(0, 50);
+                        toRemove.forEach(([alertId]) => {
+                            shownAlerts.delete(alertId);
+                            alertTimestamps.delete(alertId);
+                        });
+                    }
+                }
             } else if (data.type === 'connected') {
-                console.log('✅ ' + data.message);
+                console.log('✅', data.message);
             } else if (data.type === 'heartbeat') {
-                // 하트비트는 조용히 처리
                 console.debug('💓 하트비트');
+            } else if (data.type === 'error') {
+                console.error('⚠️ 서버 오류:', data.message);
             }
         }
         
         function showDetectionNotification(alert) {
-            // 브라우저 알림 권한 요청
-            if (Notification.permission === 'default') {
+            // 브라우저 알림 권한 확인
+            if ('Notification' in window && Notification.permission === 'default') {
                 Notification.requestPermission();
             }
             
             // 브라우저 알림 표시
-            if (Notification.permission === 'granted') {
-                const notification = new Notification('🚨 AI 객체 탐지', {
-                    body: `${alert.camera_location}에서 ${alert.detected_object} ${alert.object_count}개 탐지됨`,
-                    icon: '/static/favicon.ico',
-                    badge: '/static/favicon.ico',
-                    tag: 'detection-alert',
-                    renotify: true
-                });
-                
-                notification.onclick = function() {
-                    window.focus();
-                    notification.close();
-                };
-                
-                // 5초 후 자동 닫기
-                setTimeout(() => notification.close(), 5000);
+            if ('Notification' in window && Notification.permission === 'granted') {
+                try {
+                    const notification = new Notification('🚨 AI 객체 탐지', {
+                        body: `${alert.camera_location}에서 ${alert.detected_object} ${alert.object_count}개 탐지됨`,
+                        icon: '/static/favicon.ico',
+                        tag: `detection-alert-${alert.id}`,
+                        renotify: false,
+                        requireInteraction: false
+                    });
+                    
+                    notification.onclick = function() {
+                        window.focus();
+                        notification.close();
+                    };
+                    
+                    setTimeout(() => {
+                        try {
+                            notification.close();
+                        } catch (e) {}
+                    }, 5000);
+                } catch (e) {
+                    console.error('브라우저 알림 생성 실패:', e);
+                }
             }
             
             // 페이지 내 토스트 알림
@@ -436,21 +544,30 @@
         }
         
         function showToastAlert(alert) {
-            // 기존 토스트 제거
-            const existingToast = document.querySelector('.toast-alert');
+            // 동일한 알림이 이미 표시 중인지 확인
+            const existingToast = document.querySelector(`.toast-alert[data-alert-id="${alert.id}"]`);
             if (existingToast) {
-                existingToast.remove();
+                return;
             }
             
             // 새 토스트 생성
             const toast = document.createElement('div');
             toast.className = 'toast-alert';
+            toast.setAttribute('data-alert-id', alert.id);
+            
+            // 탐지 시간 표시
+            const detectedTime = new Date(alert.detected_at);
+            const timeString = detectedTime.toLocaleTimeString('ko-KR');
+            
             toast.innerHTML = `
                 <div class="toast-content">
                     <div class="toast-icon">🚨</div>
                     <div class="toast-text">
-                        <div class="toast-title">AI 객체 탐지</div>
-                        <div class="toast-message">${alert.camera_location}에서 ${alert.detected_object} ${alert.object_count}개 탐지됨</div>
+                        <div class="toast-title">AI 객체 탐지 (${timeString})</div>
+                        <div class="toast-message">
+                            <strong>${alert.camera_location}</strong>에서 
+                            <strong>${alert.detected_object}</strong> ${alert.object_count}개 탐지
+                        </div>
                     </div>
                     <div class="toast-close" onclick="this.parentElement.parentElement.remove()">×</div>
                 </div>
@@ -461,33 +578,106 @@
             // 8초 후 자동 제거
             setTimeout(() => {
                 if (toast.parentElement) {
-                    toast.remove();
+                    toast.style.opacity = '0';
+                    toast.style.transition = 'opacity 0.5s';
+                    setTimeout(() => toast.remove(), 500);
                 }
             }, 8000);
         }
         
         function playAlertSound() {
-            // 브라우저 지원 시 알림 소리 재생
+            // 소리 재생 제한
+            const now = Date.now();
+            if (window.lastAlertSound && now - window.lastAlertSound < 1000) {
+                return;
+            }
+            window.lastAlertSound = now;
+            
             try {
                 const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmUdBD2U2/PJdSQFJnvC7+OWSwkOVLTn77BdGAg+ltryxnkpBSl+z+jPdSMGZ');
                 audio.volume = 0.3;
-                audio.play().catch(() => {
-                    // 자동 재생 정책으로 인한 오류는 무시
-                });
-            } catch (e) {
-                // 오디오 재생 실패는 무시
-            }
+                audio.play().catch(() => {});
+            } catch (e) {}
         }
         
-        // 페이지 로드 시 알림 시스템 초기화
+        function showConnectionError() {
+            const errorToast = document.createElement('div');
+            errorToast.className = 'toast-alert';
+            errorToast.style.borderLeftColor = '#e74c3c';
+            errorToast.innerHTML = `
+                <div class="toast-content">
+                    <div class="toast-icon">⚠️</div>
+                    <div class="toast-text">
+                        <div class="toast-title">연결 오류</div>
+                        <div class="toast-message">
+                            실시간 알림 연결이 끊어졌습니다.
+                            페이지를 새로고침 해주세요.
+                        </div>
+                    </div>
+                    <div class="toast-close" onclick="location.reload()">새로고침</div>
+                </div>
+            `;
+            document.body.appendChild(errorToast);
+        }
+        
+        // 알림 히스토리 초기화
+        function clearAlertHistory() {
+            shownAlerts.clear();
+            alertTimestamps.clear();
+            sessionStorage.removeItem('shownAlerts');
+            sessionStorage.removeItem('alertTimestamps');
+            
+            fetch('/cctv/clear-alert-history/', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCookie('csrftoken')
+                }
+            }).then(response => response.json())
+            .then(data => console.log('알림 히스토리 초기화:', data))
+            .catch(error => console.error('초기화 오류:', error));
+        }
+        
+        // SSE 연결 상태 확인 (5초마다)
+        setInterval(() => {
+            if (eventSource) {
+                const state = ['CONNECTING', 'OPEN', 'CLOSED'][eventSource.readyState];
+                console.log(`🔌 SSE 상태: ${state}`);
+                
+                if (eventSource.readyState === EventSource.CLOSED) {
+                    console.log('🔄 SSE 재연결 필요');
+                    eventSource = null;
+                    initDetectionAlerts();
+                }
+            } else {
+                console.log('⚠️ SSE 연결 없음, 재연결 시도');
+                initDetectionAlerts();
+            }
+        }, 5000);
+        
+        // 페이지 로드 시 초기화
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('📱 페이지 로드 완료, SSE 초기화 시작');
             initDetectionAlerts();
         });
         
-        // 페이지 언로드 시 연결 종료
+        // 페이지 언로드 시 정리
         window.addEventListener('beforeunload', function() {
             if (eventSource) {
                 eventSource.close();
+            }
+        });
+        
+        // 페이지 visibility 변경 처리
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                console.log('📴 페이지 백그라운드로 전환');
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+            } else {
+                console.log('📱 페이지 활성화, SSE 재연결');
+                initDetectionAlerts();
             }
         });
     </script>

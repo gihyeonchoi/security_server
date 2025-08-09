@@ -4,11 +4,13 @@ from django.contrib.auth.views import login_required
 from django.http import StreamingHttpResponse, JsonResponse, HttpResponse
 from django.contrib import messages
 from django.views.decorators.http import require_http_methods
+from django.utils import timezone
 from .models import Camera, TargetLabel, DetectionLog
 from .utils import camera_streamer, ai_detection_system
 import json
 import time
 import queue
+from datetime import timedelta
 
 @login_required
 def camera_stream(request, camera_id):
@@ -166,13 +168,20 @@ def target_label_delete(request, label_id):
     return render(request, 'cctv/target_label_confirm_delete.html', {'target_label': target_label})
 
 def detection_alerts_stream(request):
-    """SSE를 위한 실시간 알림 스트림"""
+    """SSE를 위한 실시간 알림 스트림 - 수정된 버전"""
     def event_stream():
-        # SSE 헤더 설정
+        # SSE 연결 시작
         yield "data: {\"type\": \"connected\", \"message\": \"알림 스트림 연결됨\"}\n\n"
         
-        # 최근 10개 탐지 로그 전송
-        recent_logs = DetectionLog.objects.filter(has_alert=True)[:10]
+        # 처음 연결 시 최근 1분 이내의 알림만 전송
+        recent_time = timezone.now() - timedelta(minutes=1)
+        recent_logs = DetectionLog.objects.filter(
+            has_alert=True,
+            detected_at__gte=recent_time
+        ).order_by('-detected_at')[:3]  # 최대 3개만
+        
+        print(f"📨 SSE 초기 알림: {recent_logs.count()}개")
+        
         for log in recent_logs:
             alert_data = {
                 'type': 'detection_alert',
@@ -183,33 +192,83 @@ def detection_alerts_stream(request):
                 'object_count': log.object_count,
                 'detected_at': log.detected_at.isoformat(),
                 'has_screenshot': bool(log.screenshot_path),
-                'confidence': log.confidence
+                'confidence': log.confidence,
+                'is_recent': True
             }
-            yield f"data: {json.dumps(alert_data)}\n\n"
+            yield f"data: {json.dumps(alert_data, ensure_ascii=False)}\n\n"
         
         # 실시간 알림 대기
+        last_heartbeat = time.time()
+        empty_count = 0
+        
         while True:
             try:
-                # AI 탐지 시스템의 알림 큐에서 새 알림 확인
-                if hasattr(ai_detection_system, 'alert_queue'):
+                current_time = time.time()
+                
+                # 전역 알림 큐에서 새 알림 확인
+                alert_queue = ai_detection_system.get_alert_queue()
+                
+                if alert_queue:
                     try:
-                        alert = ai_detection_system.alert_queue.get_nowait()
-                        yield f"data: {json.dumps(alert)}\n\n"
+                        # 0.5초 타임아웃으로 큐에서 가져오기
+                        alert = alert_queue.get(timeout=0.5)
+                        
+                        print(f"🔔 SSE 새 알림 전송: {alert.get('detected_object', 'Unknown')}")
+                        
+                        # 새로운 알림 전송
+                        alert['is_new'] = True
+                        yield f"data: {json.dumps(alert, ensure_ascii=False)}\n\n"
+                        
+                        empty_count = 0
+                        
                     except queue.Empty:
-                        pass
+                        empty_count += 1
+                        
+                        # 디버그: 큐가 비어있는 경우
+                        if empty_count % 20 == 0:  # 10초마다 한 번
+                            print(f"💤 SSE 큐 비어있음 (체크 횟수: {empty_count})")
+                else:
+                    print("⚠️ SSE: 알림 큐가 None입니다")
+                    time.sleep(1)
+                    continue
                 
-                # 하트비트 전송 (30초마다)
-                yield "data: {\"type\": \"heartbeat\"}\n\n"
-                time.sleep(30)
+                # 30초마다 하트비트 전송
+                if current_time - last_heartbeat > 30:
+                    yield "data: {\"type\": \"heartbeat\"}\n\n"
+                    last_heartbeat = current_time
+                    print(f"💓 SSE 하트비트 전송")
                 
-            except Exception as e:
-                yield f"data: {{\"type\": \"error\", \"message\": \"스트림 오류: {str(e)}\"}}\n\n"
+                # CPU 사용량 감소를 위한 짧은 대기
+                time.sleep(0.1)
+                
+            except GeneratorExit:
+                print("🛑 SSE 연결 종료 (클라이언트 연결 끊김)")
                 break
+            except Exception as e:
+                print(f"❌ SSE 스트림 오류: {e}")
+                yield f"data: {{\"type\": \"error\", \"message\": \"스트림 오류: {str(e)}\"}}\n\n"
+                time.sleep(1)
     
-    response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
-    response['Cache-Control'] = 'no-cache'
+    response = StreamingHttpResponse(
+        event_stream(), 
+        content_type='text/event-stream'
+    )
+    response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response['Pragma'] = 'no-cache'
+    response['Expires'] = '0'
     response['X-Accel-Buffering'] = 'no'  # nginx 버퍼링 비활성화
+    # response['Connection'] = 'keep-alive' # (WSGI에서 hop-by-hop 헤더는 허용되지 않음)
+    
     return response
+
+# 알림 초기화 API 추가
+@login_required
+@require_http_methods(["POST"])
+def clear_alert_history(request):
+    """알림 히스토리 초기화"""
+    request.session['last_alert_time'] = timezone.now().isoformat()
+    request.session.save()
+    return JsonResponse({'status': 'success', 'message': '알림 히스토리가 초기화되었습니다.'})
 
 @login_required
 def detection_logs_api(request):

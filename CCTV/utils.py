@@ -11,9 +11,14 @@ import numpy as np
 from collections import deque
 from ultralytics import YOLO
 import torch
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import clip
+import threading
 from datetime import datetime
+
+# 전역 알림 큐 (모든 인스턴스가 공유)
+GLOBAL_ALERT_QUEUE = queue.Queue(maxsize=100)
+ALERT_LISTENERS = []  # SSE 리스너들을 저장
 
 class CameraStreamer:
     def __init__(self):
@@ -74,6 +79,7 @@ class CameraStreamer:
             # print(f"🔓 global_lock 해제: {rtsp_url}")
     
     def connect_camera(self, rtsp_url):
+        """카메라 연결 개선 - 타임아웃 단축 및 비동기 처리"""
         camera_info = self.get_camera_stream(rtsp_url)
         
         with camera_info['lock']:
@@ -91,42 +97,54 @@ class CameraStreamer:
                         camera_info['cap'].release()
                         time.sleep(0.1)
                     
-                    # OpenCV 설정 최적화
+                    # OpenCV 설정 최적화 - 타임아웃 단축
                     cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
                     
                     # RTSP 스트림 최적화 설정
-                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # 버퍼 크기 최소화
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                     cap.set(cv2.CAP_PROP_FPS, 25)
                     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'H264'))
                     
-                    # FFMPEG 옵션 설정
-                    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
-                    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
+                    # FFMPEG 옵션 설정 - 타임아웃 단축
+                    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 2000)  # 5000 -> 2000ms
+                    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 2000)  # 5000 -> 2000ms
                     
                     if cap.isOpened():
-                        # 첫 프레임 테스트
-                        ret, test_frame = cap.read()
-                        if ret and test_frame is not None:
-                            camera_info['cap'] = cap
-                            camera_info['is_connected'] = True
-                            camera_info['reconnect_attempts'] = 0
-                            
-                            # 프레임 읽기 스레드 시작
-                            if rtsp_url not in self.reader_threads or not self.reader_threads[rtsp_url].is_alive():
-                                reader_thread = threading.Thread(
-                                    target=self._frame_reader_thread,
-                                    args=(rtsp_url,),
-                                    daemon=True
-                                )
-                                self.reader_threads[rtsp_url] = reader_thread
-                                reader_thread.start()
-                            
-                            return True
-                        else:
+                        # 첫 프레임 테스트 (타임아웃 추가)
+                        import threading
+                        frame_result = [None, None]
+                        
+                        def read_frame():
+                            ret, frame = cap.read()
+                            frame_result[0] = ret
+                            frame_result[1] = frame
+                        
+                        read_thread = threading.Thread(target=read_frame)
+                        read_thread.start()
+                        read_thread.join(timeout=2.0)  # 2초 타임아웃
+                        
+                        if read_thread.is_alive() or not frame_result[0] or frame_result[1] is None:
                             cap.release()
                             camera_info['reconnect_attempts'] += 1
                             camera_info['last_reconnect_time'] = current_time
+                            print(f"⚠️ 카메라 연결 실패 (타임아웃): {rtsp_url}")
                             return False
+                        
+                        camera_info['cap'] = cap
+                        camera_info['is_connected'] = True
+                        camera_info['reconnect_attempts'] = 0
+                        
+                        # 프레임 읽기 스레드 시작
+                        if rtsp_url not in self.reader_threads or not self.reader_threads[rtsp_url].is_alive():
+                            reader_thread = threading.Thread(
+                                target=self._frame_reader_thread,
+                                args=(rtsp_url,),
+                                daemon=True
+                            )
+                            self.reader_threads[rtsp_url] = reader_thread
+                            reader_thread.start()
+                        
+                        return True
                     else:
                         camera_info['reconnect_attempts'] += 1
                         camera_info['last_reconnect_time'] = current_time
@@ -463,6 +481,34 @@ class AIDetectionSystem:
         self.screenshot_dir = os.path.join(settings.MEDIA_ROOT, 'screenshots')
         self.load_models()
         self.ensure_screenshot_dir()
+        # 전역 큐 사용
+        self.alert_queue = GLOBAL_ALERT_QUEUE
+        # 한글 폰트 설정
+        self.setup_korean_font()
+
+    def setup_korean_font(self):
+        """한글 폰트 설정"""
+        # Windows 환경
+        font_paths = [
+            "C:/Windows/Fonts/malgun.ttf",  # 맑은 고딕
+            "C:/Windows/Fonts/gulim.ttc",   # 굴림
+            "C:/Windows/Fonts/batang.ttc",  # 바탕
+            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",  # Linux
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",  # macOS
+        ]
+        
+        self.korean_font = None
+        for font_path in font_paths:
+            if os.path.exists(font_path):
+                try:
+                    self.korean_font = font_path
+                    print(f"✅ 한글 폰트 로드: {font_path}")
+                    break
+                except:
+                    continue
+        
+        if not self.korean_font:
+            print("⚠️ 한글 폰트를 찾을 수 없습니다. 영문만 표시됩니다.")
     
     def ensure_screenshot_dir(self):
         """스크린샷 저장 디렉토리 생성"""
@@ -546,29 +592,38 @@ class AIDetectionSystem:
             print(f"⏹️ 카메라 ID {camera_id} 탐지 중지")
     
     def _detection_worker(self, camera):
-        """카메라별 탐지 워커 스레드 (디버그 로그 추가)"""
+        """개선된 탐지 워커 - 비블로킹 처리"""
         from .models import TargetLabel, DetectionLog
         
         print(f"\n🚀 탐지 워커 시작: 카메라 '{camera.name}' (ID: {camera.id})")
+        consecutive_failures = 0
         
         while self.detection_active.get(camera.id, False):
             try:
-                # 카메라에서 최신 프레임 가져오기
+                # 카메라 연결 상태 빠른 체크
                 camera_info = camera_streamer.get_camera_stream(camera.rtsp_url)
                 
                 if not camera_info['is_connected']:
-                    print(f"⚠️ 카메라 '{camera.name}' 연결되지 않음. 대기 중...")
-                    time.sleep(2)
+                    consecutive_failures += 1
+                    if consecutive_failures > 3:
+                        print(f"⚠️ 카메라 '{camera.name}' 연결 실패 3회 초과, 30초 대기")
+                        time.sleep(30)  # 연결 실패한 카메라는 30초 대기
+                        consecutive_failures = 0
+                    else:
+                        time.sleep(2)  # 짧은 재시도
                     continue
                 
-                # 프레임 큐에서 최신 프레임 가져오기
+                consecutive_failures = 0  # 연결 성공 시 리셋
+                
+                # 프레임 큐에서 최신 프레임 가져오기 (논블로킹)
                 frame_queue = camera_streamer.frame_queues.get(camera.rtsp_url)
-                if not frame_queue or frame_queue.empty():
+                if not frame_queue:
                     time.sleep(0.5)
                     continue
                 
                 try:
-                    frame = frame_queue.get_nowait()
+                    # 타임아웃 설정으로 블로킹 방지
+                    frame = frame_queue.get(timeout=0.5)
                     print(f"\n📹 프레임 획득: 카메라 '{camera.name}' - 크기: {frame.shape}")
                 except queue.Empty:
                     time.sleep(0.5)
@@ -578,13 +633,27 @@ class AIDetectionSystem:
                 target_labels = list(camera.target_labels.all())
                 if not target_labels:
                     print(f"⚠️ 카메라 '{camera.name}'에 타겟 라벨이 없음")
-                    time.sleep(2)
+                    time.sleep(5)  # 타겟 라벨 없으면 더 긴 대기
                     continue
                 
                 print(f"🎯 타겟 라벨 {len(target_labels)}개 로드")
                 
-                # 객체 탐지 수행
-                detections = self._detect_objects(frame, target_labels)
+                # 객체 탐지 수행 (타임아웃 설정)
+                import threading
+                detection_result = [None]
+                
+                def detect_with_timeout():
+                    detection_result[0] = self._detect_objects(frame, target_labels)
+                
+                detect_thread = threading.Thread(target=detect_with_timeout)
+                detect_thread.start()
+                detect_thread.join(timeout=5.0)  # 5초 타임아웃
+                
+                if detect_thread.is_alive():
+                    print(f"⚠️ 탐지 타임아웃: 카메라 '{camera.name}'")
+                    continue
+                
+                detections = detection_result[0]
                 
                 # 탐지 결과 처리
                 if detections:
@@ -594,8 +663,11 @@ class AIDetectionSystem:
                 else:
                     print(f"💤 탐지된 객체 없음")
                 
-                # 백그라운드 연속 모드에서는 탐지 간격을 늘려서 리소스 절약
-                detection_interval = 3.0 if camera_streamer.is_background_streaming(camera.rtsp_url) else 1.5
+                # 탐지 간격 (연결 상태에 따라 조정)
+                if camera_info['is_connected']:
+                    detection_interval = 1.5
+                else:
+                    detection_interval = 5.0
                 time.sleep(detection_interval)
                 
             except Exception as e:
@@ -607,7 +679,7 @@ class AIDetectionSystem:
         print(f"🛑 탐지 워커 종료: 카메라 '{camera.name}'")
     
     def _detect_objects(self, frame, target_labels):
-        """프레임에서 객체 탐지 (디버그 로그 추가)"""
+        """프레임에서 객체 탐지 - 바운딩 박스 정보 포함"""
         detections = []
         
         if self.yolo_model is None or self.clip_model is None:
@@ -615,56 +687,32 @@ class AIDetectionSystem:
             return detections
         
         try:
-            print(f"\n🔍 디버그: 객체 탐지 시작")
-            print(f"  - 타겟 라벨: {[f'{tl.display_name}({tl.label_name})' for tl in target_labels]}")
-            
             # YOLO로 1차 객체 탐지 (바운딩 박스 획득)
             results = self.yolo_model(frame, verbose=False)
             
             if not results or len(results) == 0:
-                print("  - YOLO 탐지 결과: 없음")
                 return detections
             
             yolo_result = results[0]
             
-            # YOLO가 탐지한 각 바운딩 박스를 CLIP으로 분류
             if hasattr(yolo_result, 'boxes') and yolo_result.boxes is not None:
-                boxes = yolo_result.boxes.xyxy.cpu().numpy()  # 바운딩 박스 좌표
+                boxes = yolo_result.boxes.xyxy.cpu().numpy()
                 confidences = yolo_result.boxes.conf.cpu().numpy() if yolo_result.boxes.conf is not None else []
-                classes = yolo_result.boxes.cls.cpu().numpy() if yolo_result.boxes.cls is not None else []
-                
-                print(f"  - YOLO 탐지 수: {len(boxes)}개")
-                
-                # YOLO 클래스 이름 출력 (디버그용)
-                if len(classes) > 0:
-                    class_names = yolo_result.names if hasattr(yolo_result, 'names') else {}
-                    detected_classes = [class_names.get(int(cls), f'class_{int(cls)}') for cls in classes]
-                    print(f"  - YOLO 탐지 클래스: {detected_classes}")
-                    print(f"  - YOLO 신뢰도: {[f'{conf:.2f}' for conf in confidences]}")
                 
                 # 신뢰도 0.5 이상인 바운딩 박스만 사용
                 high_conf_mask = confidences >= 0.5
                 valid_boxes = boxes[high_conf_mask]
                 valid_confidences = confidences[high_conf_mask]
                 
-                print(f"  - 신뢰도 0.5 이상: {len(valid_boxes)}개")
-                
                 if len(valid_boxes) == 0:
                     return detections
                 
                 # 각 타겟 라벨에 대해 CLIP으로 분류
                 for target_label in target_labels:
-                    print(f"\n  📍 타겟 라벨 '{target_label.display_name}' ({target_label.label_name}) 검사:")
+                    detected_boxes = []
                     
-                    clip_count = 0
-                    total_confidence = 0
-                    box_details = []
-                    
-                    # 각 바운딩 박스 영역을 CLIP으로 분류
                     for idx, (box, yolo_conf) in enumerate(zip(valid_boxes, valid_confidences)):
                         x1, y1, x2, y2 = map(int, box)
-                        
-                        # 바운딩 박스 영역 추출
                         cropped_region = frame[y1:y2, x1:x2]
                         
                         if cropped_region.size > 0:
@@ -672,58 +720,54 @@ class AIDetectionSystem:
                             pil_crop = Image.fromarray(cv2.cvtColor(cropped_region, cv2.COLOR_BGR2RGB))
                             crop_tensor = self.clip_preprocess(pil_crop).unsqueeze(0).to(self.device)
                             
-                            # 텍스트 쿼리
                             text_query = f"a photo of {target_label.label_name}"
                             text_token = clip.tokenize([text_query]).to(self.device)
                             
                             with torch.no_grad():
+                                # 특징 추출
                                 crop_features = self.clip_model.encode_image(crop_tensor)
                                 text_features = self.clip_model.encode_text(text_token)
                                 
-                                # 유사도 계산
+                                # L2 정규화 (중요!)
+                                crop_features = crop_features / crop_features.norm(dim=-1, keepdim=True)
+                                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+                                
+                                # 코사인 유사도 계산 (이제 -1에서 1 사이)
                                 similarity = (crop_features @ text_features.T).cpu().numpy()[0][0]
                                 
-                                box_details.append({
-                                    'box_idx': idx,
-                                    'coords': f"({x1},{y1})-({x2},{y2})",
-                                    'yolo_conf': f"{yolo_conf:.2f}",
-                                    'clip_sim': f"{similarity:.3f}"
-                                })
+                                # 0-1 범위로 변환 (선택적)
+                                similarity_normalized = (similarity + 1) / 2
                                 
-                                # CLIP 임계값 (0.2 이상이면 해당 객체로 판단)
-                                if similarity > 0.2:
-                                    clip_count += 1
-                                    total_confidence += similarity
-                                    print(f"     ✅ Box{idx}: CLIP 매칭! (유사도: {similarity:.3f})")
-                                else:
-                                    print(f"     ❌ Box{idx}: CLIP 미매칭 (유사도: {similarity:.3f})")
-                    
-                    # 박스별 상세 정보 출력
-                    print(f"     박스 상세:")
-                    for detail in box_details:
-                        print(f"       - Box{detail['box_idx']}: {detail['coords']}, "
-                            f"YOLO신뢰도={detail['yolo_conf']}, CLIP유사도={detail['clip_sim']}")
+                                print(f"     CLIP 유사도: 원본={similarity:.3f}, 정규화={similarity_normalized:.3f}")
+                            
+                            # CLIP 임계값 (정규화된 값 기준으로 조정)
+                            if similarity_normalized > 0.6:  # 0.2 -> 0.6으로 조정
+                                # YOLO 신뢰도와 CLIP 유사도의 평균 사용
+                                combined_confidence = (float(yolo_conf) + float(similarity_normalized)) / 2
+                                
+                                detected_boxes.append({
+                                    'box': [x1, y1, x2, y2],
+                                    'confidence': combined_confidence,  # 결합된 신뢰도
+                                    'yolo_confidence': float(yolo_conf),
+                                    'clip_similarity': float(similarity_normalized)
+                                })
+                                print(f"     ✅ Box{idx}: 매칭! (YOLO={yolo_conf:.2f}, CLIP={similarity_normalized:.2f}, 결합={combined_confidence:.2f})")
                     
                     # 해당 라벨로 분류된 객체가 있다면 탐지 결과에 추가
-                    if clip_count > 0:
-                        avg_confidence = total_confidence / clip_count
+                    if detected_boxes:
+                        # 평균 신뢰도 계산
+                        avg_confidence = sum(box['confidence'] for box in detected_boxes) / len(detected_boxes)
                         
                         detections.append({
                             'label': target_label,
-                            'confidence': float(avg_confidence),
-                            'count': clip_count,  # CLIP으로 정확히 센 개수
-                            'has_alert': target_label.has_alert
+                            'confidence': float(avg_confidence),  # 0-1 범위
+                            'count': len(detected_boxes),
+                            'has_alert': target_label.has_alert,
+                            'boxes': detected_boxes
                         })
                         
-                        print(f"     🎯 최종 탐지: {clip_count}개 (평균 신뢰도: {avg_confidence:.3f})")
-                        print(f"     🚨 알림 설정: {'활성화' if target_label.has_alert else '비활성화'}")
-                    else:
-                        print(f"     ⭕ 탐지되지 않음")
+                        print(f"     🎯 최종 탐지: {len(detected_boxes)}개 (평균 신뢰도: {avg_confidence:.1%})")
             
-            print(f"\n📊 전체 탐지 결과: {len(detections)}개 타겟 발견")
-            for det in detections:
-                print(f"  - {det['label'].display_name}: {det['count']}개 (신뢰도: {det['confidence']:.3f})")
-        
         except Exception as e:
             print(f"❌ 객체 탐지 오류: {e}")
             import traceback
@@ -731,9 +775,8 @@ class AIDetectionSystem:
         
         return detections
 
-    
     def _process_detection(self, camera, frame, detection, target_labels):
-        """탐지 결과 처리 (로그 저장, 알림, 스크린샷) - 디버그 추가"""
+        """탐지 결과 처리 - 바운딩 박스 포함 스크린샷"""
         from .models import DetectionLog
         
         try:
@@ -744,12 +787,15 @@ class AIDetectionSystem:
             print(f"  - 신뢰도: {detection['confidence']:.3f}")
             print(f"  - 알림 여부: {'예' if detection['has_alert'] else '아니오'}")
             
-            # 스크린샷 저장 (has_alert인 경우)
+            # 스크린샷 저장 (has_alert인 경우 + 바운딩 박스 그리기)
             screenshot_path = None
             if detection['has_alert']:
-                screenshot_path = self._save_screenshot(camera, frame, detection)
+                # 프레임에 바운딩 박스 그리기
+                annotated_frame = self._draw_detection_boxes(frame, detection)
+                screenshot_path = self._save_screenshot_with_boxes(camera, annotated_frame, detection)
+                
                 if screenshot_path:
-                    print(f"  - 📸 스크린샷 저장: {screenshot_path}")
+                    print(f"  - 📸 스크린샷 저장 (박스 포함): {screenshot_path}")
                 else:
                     print(f"  - ⚠️ 스크린샷 저장 실패")
             
@@ -772,49 +818,202 @@ class AIDetectionSystem:
                 self._send_realtime_alert(log)
                 print(f"  - 📢 실시간 알림 전송 완료")
             
-            print(f"🎯 탐지 로그: {log}")
-            
         except Exception as e:
             print(f"❌ 탐지 결과 처리 오류: {e}")
             import traceback
             traceback.print_exc()
+    def _draw_detection_boxes(self, frame, detection):
+        """프레임에 바운딩 박스와 라벨 그리기 (한글 지원)"""
+        # 프레임 복사 (원본 보존)
+        annotated_frame = frame.copy()
+        
+        # OpenCV BGR을 PIL RGB로 변환
+        frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+        pil_image = Image.fromarray(frame_rgb)
+        draw = ImageDraw.Draw(pil_image)
+        
+        # 폰트 설정 (한글 지원)
+        try:
+            if self.korean_font:
+                font = ImageFont.truetype(self.korean_font, 24)
+                small_font = ImageFont.truetype(self.korean_font, 18)
+            else:
+                # 기본 폰트 (영문만)
+                font = ImageFont.load_default()
+                small_font = font
+        except:
+            font = ImageFont.load_default()
+            small_font = font
+        
+        # 색상 설정
+        if detection['has_alert']:
+            box_color = (255, 0, 0)  # 빨간색 (경고)
+            text_bg_color = (255, 0, 0)
+        else:
+            box_color = (0, 255, 0)  # 초록색 (일반)
+            text_bg_color = (0, 255, 0)
+        text_color = (255, 255, 255)  # 흰색 텍스트
+        
+        # 각 바운딩 박스 그리기
+        if 'boxes' in detection and detection['boxes']:
+            for idx, box_info in enumerate(detection['boxes']):
+                x1, y1, x2, y2 = box_info['box']
+                confidence = box_info['confidence']
+                
+                # 바운딩 박스 그리기 (두께 3)
+                draw.rectangle([x1, y1, x2, y2], outline=box_color, width=3)
+                
+                # 라벨 텍스트 준비
+                label_text = f"{detection['label'].display_name} {confidence*100:.1f}%"
+                
+                # 텍스트 크기 계산
+                try:
+                    bbox = draw.textbbox((x1, y1), label_text, font=font)
+                    text_width = bbox[2] - bbox[0]
+                    text_height = bbox[3] - bbox[1]
+                except:
+                    # textbbox가 없는 경우 (구버전 Pillow)
+                    text_width, text_height = draw.textsize(label_text, font=font)
+                
+                # 텍스트 배경 그리기
+                text_bg_y1 = max(0, y1 - text_height - 10)
+                text_bg_y2 = y1
+                draw.rectangle(
+                    [x1, text_bg_y1, x1 + text_width + 10, text_bg_y2],
+                    fill=text_bg_color
+                )
+                
+                # 텍스트 그리기
+                draw.text(
+                    (x1 + 5, text_bg_y1 + 2),
+                    label_text,
+                    font=font,
+                    fill=text_color
+                )
+                
+                # 박스 번호 (여러 개일 경우)
+                if len(detection['boxes']) > 1:
+                    box_num_text = f"#{idx+1}"
+                    draw.text(
+                        (x1 + 5, y1 + 5),
+                        box_num_text,
+                        font=small_font,
+                        fill=box_color
+                    )
+        
+        # 전체 정보 표시 (우측 상단)
+        info_text = f"총 {detection['count']}개 탐지"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # 정보 배경
+        info_bg_x1 = pil_image.width - 250
+        info_bg_y1 = 10
+        info_bg_x2 = pil_image.width - 10
+        info_bg_y2 = 70
+        
+        draw.rectangle(
+            [info_bg_x1, info_bg_y1, info_bg_x2, info_bg_y2],
+            fill=(0, 0, 0, 180)  # 반투명 검정
+        )
+        
+        draw.text(
+            (info_bg_x1 + 10, info_bg_y1 + 5),
+            info_text,
+            font=font,
+            fill=(255, 255, 255)
+        )
+        
+        draw.text(
+            (info_bg_x1 + 10, info_bg_y1 + 30),
+            timestamp,
+            font=small_font,
+            fill=(200, 200, 200)
+        )
+        
+        # PIL 이미지를 OpenCV 형식으로 변환
+        annotated_frame = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+        
+        return annotated_frame
     
-
-    def _save_screenshot(self, camera, frame, detection):
-        """스크린샷 저장"""
+    def _save_screenshot_with_boxes(self, camera, annotated_frame, detection):
+        """바운딩 박스가 그려진 스크린샷 저장"""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{camera.id}_{timestamp}_{detection['label'].display_name}.jpg"
+            # 파일명에 한글 포함 시 문제 방지
+            safe_object_name = detection['label'].display_name.replace(' ', '_')
+            # 한글을 영문으로 변환하거나 ID 사용
+            if not safe_object_name.isascii():
+                safe_object_name = f"object_{detection['label'].id}"
+            
+            filename = f"{camera.id}_{timestamp}_{safe_object_name}.jpg"
             filepath = os.path.join(self.screenshot_dir, filename)
             
-            cv2.imwrite(filepath, frame)
+            # 스크린샷 저장 (JPEG 품질 95)
+            cv2.imwrite(filepath, annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            
+            print(f"    💾 스크린샷 저장 완료: {filename}")
             return filepath
             
         except Exception as e:
             print(f"❌ 스크린샷 저장 오류: {e}")
             return None
     
+    def _save_screenshot(self, camera, frame, detection):
+        """기존 스크린샷 저장 함수 (바운딩 박스 포함 버전으로 리다이렉트)"""
+        # 바운딩 박스를 그린 프레임 생성
+        annotated_frame = self._draw_detection_boxes(frame, detection)
+        # 저장
+        return self._save_screenshot_with_boxes(camera, annotated_frame, detection)
+    
     def _send_realtime_alert(self, log):
-        """실시간 알림 전송 (SSE 큐에 추가)"""
-        # SSE 알림 큐에 추가 (추후 구현)
-        alert_data = {
-            'type': 'detection_alert',
-            'camera_name': log.camera_name,
-            'camera_location': log.camera_location,
-            'detected_object': log.detected_object,
-            'object_count': log.object_count,
-            'detected_at': log.detected_at.isoformat(),
-            'has_screenshot': bool(log.screenshot_path)
-        }
-        
-        # 글로벌 알림 큐에 추가 (추후 SSE에서 사용)
-        if not hasattr(self, 'alert_queue'):
-            self.alert_queue = queue.Queue()
-        
+        """실시간 알림 전송 - 개선된 버전"""
         try:
-            self.alert_queue.put_nowait(alert_data)
-        except queue.Full:
-            pass  # 큐가 가득 찬 경우 무시
+            alert_data = {
+                'type': 'detection_alert',
+                'id': log.id,
+                'camera_name': log.camera_name,
+                'camera_location': log.camera_location,
+                'detected_object': log.detected_object,
+                'object_count': log.object_count,
+                'detected_at': log.detected_at.isoformat(),
+                'has_screenshot': bool(log.screenshot_path),
+                'confidence': log.confidence,
+                'is_new': True  # 새 알림 플래그
+            }
+            
+            # 전역 큐에 추가
+            try:
+                # 큐가 가득 찬 경우 오래된 항목 제거
+                if self.alert_queue.full():
+                    try:
+                        self.alert_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                
+                self.alert_queue.put_nowait(alert_data)
+                print(f"  ✅ 알림 큐에 추가 성공: {alert_data['detected_object']}")
+                print(f"  📊 큐 크기: {self.alert_queue.qsize()}/{self.alert_queue.maxsize}")
+                
+                # 모든 SSE 리스너에게 즉시 알림 (선택적)
+                for listener in ALERT_LISTENERS:
+                    try:
+                        listener(alert_data)
+                    except:
+                        pass
+                        
+            except queue.Full:
+                print(f"  ⚠️ 알림 큐가 가득 참")
+            except Exception as e:
+                print(f"  ❌ 큐 추가 오류: {e}")
+                
+        except Exception as e:
+            print(f"❌ 실시간 알림 전송 오류: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def get_alert_queue(self):
+        """알림 큐 반환"""
+        return self.alert_queue
     
     def start_all_detections(self):
         """모든 활성 카메라에 대한 탐지 시작 (자동 시작 모드)"""
@@ -841,3 +1040,8 @@ class AIDetectionSystem:
 # 싱글톤 인스턴스
 camera_streamer = CameraStreamer()
 ai_detection_system = AIDetectionSystem()
+
+# 알림 큐 접근을 위한 헬퍼 함수
+def get_global_alert_queue():
+    """전역 알림 큐 반환"""
+    return GLOBAL_ALERT_QUEUE
