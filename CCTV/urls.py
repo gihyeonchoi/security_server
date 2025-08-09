@@ -34,4 +34,5 @@ urlpatterns = [
     
     # 실시간 알림 (SSE)
     path('alerts/stream/', views.detection_alerts_stream, name='detection_alerts_stream'),
+    path('clear-alert-history/', views.clear_alert_history, name='clear_alert_history'),
 ]
