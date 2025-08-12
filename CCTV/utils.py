@@ -592,40 +592,98 @@ class AIDetectionSystem:
             print(f"⏹️ 카메라 ID {camera_id} 탐지 중지")
     
     def _detection_worker(self, camera):
-        """개선된 탐지 워커 - 비블로킹 처리"""
-        from .models import TargetLabel, DetectionLog
+        """카메라별 탐지 워커 스레드 - 스트림 공유 버전"""
+        # from .models import TargetLabel, DetectionLog
         
         print(f"\n🚀 탐지 워커 시작: 카메라 '{camera.name}' (ID: {camera.id})")
         consecutive_failures = 0
+        connection_retry_count = 0
         
         while self.detection_active.get(camera.id, False):
             try:
-                # 카메라 연결 상태 빠른 체크
+                # 먼저 카메라 연결 확인 (기존 연결 재사용)
                 camera_info = camera_streamer.get_camera_stream(camera.rtsp_url)
                 
+                # 연결이 없으면 새로 연결 시도
                 if not camera_info['is_connected']:
-                    consecutive_failures += 1
-                    if consecutive_failures > 3:
-                        print(f"⚠️ 카메라 '{camera.name}' 연결 실패 3회 초과, 30초 대기")
-                        time.sleep(30)  # 연결 실패한 카메라는 30초 대기
-                        consecutive_failures = 0
+                    connection_retry_count += 1
+                    
+                    # 3회 실패 시 대기 시간 증가
+                    if connection_retry_count > 3:
+                        print(f"⚠️ 카메라 '{camera.name}' 연결 시도 {connection_retry_count}회 실패")
+                        
+                        # 스트리밍 중인지 확인
+                        if camera_info.get('stream_count', 0) > 0:
+                            print(f"📺 카메라 '{camera.name}'는 스트리밍 중입니다. 스트림 공유 대기...")
+                            time.sleep(2)  # 짧은 대기 후 재시도
+                            connection_retry_count = 0  # 카운터 리셋
+                            continue
+                        else:
+                            print(f"🔄 카메라 '{camera.name}' 독립 연결 시도...")
+                            # 스트리밍이 없으면 독립적으로 연결
+                            if camera_streamer.connect_camera(camera.rtsp_url):
+                                print(f"✅ 카메라 '{camera.name}' 연결 성공")
+                                connection_retry_count = 0
+                                consecutive_failures = 0
+                            else:
+                                print(f"❌ 카메라 '{camera.name}' 연결 실패, 30초 대기")
+                                time.sleep(30)
+                                continue
                     else:
-                        time.sleep(2)  # 짧은 재시도
-                    continue
+                        # 연결 시도
+                        print(f"🔌 카메라 '{camera.name}' 연결 시도 {connection_retry_count}/3")
+                        if camera_streamer.connect_camera(camera.rtsp_url):
+                            connection_retry_count = 0
+                            consecutive_failures = 0
+                        else:
+                            time.sleep(2)
+                            continue
+                else:
+                    # 연결되어 있으면 카운터 리셋
+                    connection_retry_count = 0
+                    consecutive_failures = 0
                 
-                consecutive_failures = 0  # 연결 성공 시 리셋
-                
-                # 프레임 큐에서 최신 프레임 가져오기 (논블로킹)
+                # 프레임 큐에서 최신 프레임 가져오기
                 frame_queue = camera_streamer.frame_queues.get(camera.rtsp_url)
                 if not frame_queue:
-                    time.sleep(0.5)
+                    print(f"⚠️ 카메라 '{camera.name}' 프레임 큐 없음")
+                    time.sleep(1)
                     continue
                 
+                # 프레임 가져오기 (공유된 큐에서)
+                frame = None
                 try:
-                    # 타임아웃 설정으로 블로킹 방지
-                    frame = frame_queue.get(timeout=0.5)
-                    print(f"\n📹 프레임 획득: 카메라 '{camera.name}' - 크기: {frame.shape}")
+                    # 타임아웃을 짧게 설정하여 빠른 재시도
+                    frame = frame_queue.get(timeout=1.0)
+                    
+                    # 큐가 너무 많이 쌓였으면 최신 프레임만 사용
+                    queue_size = frame_queue.qsize()
+                    if queue_size > 2:
+                        print(f"📦 큐 크기: {queue_size}, 최신 프레임으로 스킵")
+                        while queue_size > 1:
+                            try:
+                                frame = frame_queue.get_nowait()
+                                queue_size -= 1
+                            except queue.Empty:
+                                break
+                    
+                    if frame is not None:
+                        print(f"📹 프레임 획득: 카메라 '{camera.name}' - 크기: {frame.shape}")
                 except queue.Empty:
+                    # 큐가 비어있으면 스트림이 활성화될 때까지 대기
+                    if camera_info.get('stream_count', 0) > 0:
+                        # 스트리밍 중이면 프레임을 기다림
+                        print(f"⏳ 카메라 '{camera.name}' 프레임 대기 중 (스트리밍 활성)")
+                        time.sleep(0.5)
+                        continue
+                    else:
+                        # 스트리밍이 없으면 백그라운드 모드 활성화
+                        print(f"🔄 카메라 '{camera.name}' 백그라운드 모드 활성화")
+                        camera_streamer.start_background_streaming(camera.rtsp_url)
+                        time.sleep(2)
+                        continue
+                
+                if frame is None:
                     time.sleep(0.5)
                     continue
                 
@@ -633,42 +691,27 @@ class AIDetectionSystem:
                 target_labels = list(camera.target_labels.all())
                 if not target_labels:
                     print(f"⚠️ 카메라 '{camera.name}'에 타겟 라벨이 없음")
-                    time.sleep(5)  # 타겟 라벨 없으면 더 긴 대기
+                    time.sleep(5)
                     continue
                 
-                print(f"🎯 타겟 라벨 {len(target_labels)}개 로드")
+                print(f"🎯 타겟 라벨 {len(target_labels)}개로 탐지 시작")
                 
-                # 객체 탐지 수행 (타임아웃 설정)
-                import threading
-                detection_result = [None]
-                
-                def detect_with_timeout():
-                    detection_result[0] = self._detect_objects(frame, target_labels)
-                
-                detect_thread = threading.Thread(target=detect_with_timeout)
-                detect_thread.start()
-                detect_thread.join(timeout=5.0)  # 5초 타임아웃
-                
-                if detect_thread.is_alive():
-                    print(f"⚠️ 탐지 타임아웃: 카메라 '{camera.name}'")
-                    continue
-                
-                detections = detection_result[0]
+                # 객체 탐지 수행
+                detections = self._detect_objects(frame, target_labels)
                 
                 # 탐지 결과 처리
                 if detections:
-                    print(f"\n✨ 탐지 완료! {len(detections)}개 타겟 발견")
+                    print(f"✨ 탐지 완료! {len(detections)}개 타겟 발견")
                     for detection in detections:
                         self._process_detection(camera, frame, detection, target_labels)
-                else:
-                    print(f"💤 탐지된 객체 없음")
                 
-                # 탐지 간격 (연결 상태에 따라 조정)
-                if camera_info['is_connected']:
-                    detection_interval = 1.5
+                # 탐지 간격 조정 (스트리밍 상태에 따라)
+                if camera_info.get('stream_count', 0) > 0:
+                    # 스트리밍 중이면 더 자주 탐지
+                    time.sleep(1.0)
                 else:
-                    detection_interval = 5.0
-                time.sleep(detection_interval)
+                    # 백그라운드 모드면 간격 증가
+                    time.sleep(2.0)
                 
             except Exception as e:
                 print(f"❌ 탐지 워커 오류 (카메라: {camera.name}): {e}")
@@ -699,8 +742,8 @@ class AIDetectionSystem:
                 boxes = yolo_result.boxes.xyxy.cpu().numpy()
                 confidences = yolo_result.boxes.conf.cpu().numpy() if yolo_result.boxes.conf is not None else []
                 
-                # 신뢰도 0.5 이상인 바운딩 박스만 사용
-                high_conf_mask = confidences >= 0.5
+                # 신뢰도 0.72 이상인 바운딩 박스만 사용
+                high_conf_mask = confidences >= 0.6
                 valid_boxes = boxes[high_conf_mask]
                 valid_confidences = confidences[high_conf_mask]
                 
@@ -741,7 +784,7 @@ class AIDetectionSystem:
                                 print(f"     CLIP 유사도: 원본={similarity:.3f}, 정규화={similarity_normalized:.3f}")
                             
                             # CLIP 임계값 (정규화된 값 기준으로 조정)
-                            if similarity_normalized > 0.6:  # 0.2 -> 0.6으로 조정
+                            if similarity_normalized > 0.72:  # 신뢰도.
                                 # YOLO 신뢰도와 CLIP 유사도의 평균 사용
                                 combined_confidence = (float(yolo_conf) + float(similarity_normalized)) / 2
                                 
