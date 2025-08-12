@@ -1,0 +1,31 @@
+["a chair", "a person", "other object"]
+사진은 의자 사진 사용. 그러므로 other object가 떠야함
+
+
+델 이름 : ViT-L/14@336px
+Model load time: 3.4206 sec
+Preprocess time: 0.0051 sec
+Inference time: 0.2420 sec
+Logits per image: [[19.75 18.98 21.08]]
+Softmax probabilities: [[0.1909  0.08875 0.72   ]]
+
+모델 이름 : ViT-L/14
+Model load time: 3.4044 sec
+Preprocess time: 0.0041 sec
+Inference time: 0.2244 sec
+Logits per image: [[20.19 19.69 21.66]]
+Softmax probabilities: [[0.1681 0.1019 0.73  ]]
+
+모델 이름 : ViT-B/16
+Model load time: 1.4538 sec
+Preprocess time: 0.0035 sec
+Inference time: 0.2197 sec
+Logits per image: [[24.42 22.9  24.52]]
+Softmax probabilities: [[0.4314 0.0948 0.4739]]
+
+델 이름 : ViT-B/32
+Model load time: 1.4373 sec
+Preprocess time: 0.0041 sec
+Inference time: 0.2245 sec
+Logits per image: [[26.52 24.81 24.94]]
+Softmax probabilities: [[0.72   0.1311 0.1487]]
