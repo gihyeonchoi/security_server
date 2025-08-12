@@ -79,7 +79,7 @@ class CameraStreamer:
             # print(f"🔓 global_lock 해제: {rtsp_url}")
     
     def connect_camera(self, rtsp_url):
-        """카메라 연결 개선 - 타임아웃 단축 및 비동기 처리"""
+        """카메라 연결 - 버퍼링 최소화 버전"""
         camera_info = self.get_camera_stream(rtsp_url)
         
         with camera_info['lock']:
@@ -97,54 +97,73 @@ class CameraStreamer:
                         camera_info['cap'].release()
                         time.sleep(0.1)
                     
-                    # OpenCV 설정 최적화 - 타임아웃 단축
-                    cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
+                    # GStreamer 백엔드 사용 (Linux/Windows with GStreamer)
+                    # 또는 FFMPEG 백엔드 사용
+                    backend = cv2.CAP_FFMPEG  # 또는 cv2.CAP_GSTREAMER
                     
-                    # RTSP 스트림 최적화 설정
+                    # RTSP URL에 파라미터 추가 (낮은 지연시간)
+                    # TCP 사용으로 패킷 손실 방지
+                    rtsp_url_low_latency = rtsp_url
+                    if '?' not in rtsp_url:
+                        rtsp_url_low_latency = f"{rtsp_url}?tcp"
+                    
+                    cap = cv2.VideoCapture(rtsp_url_low_latency, backend)
+                    
+                    # 버퍼 크기를 1로 설정 (최소 버퍼)
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                    cap.set(cv2.CAP_PROP_FPS, 25)
+                    
+                    # 추가 최적화 설정
                     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'H264'))
+                    cap.set(cv2.CAP_PROP_FPS, 25)
                     
                     # FFMPEG 옵션 설정 - 타임아웃 단축
-                    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 2000)  # 5000 -> 2000ms
-                    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 2000)  # 5000 -> 2000ms
+                    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 2000)
+                    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 2000)
                     
                     if cap.isOpened():
-                        # 첫 프레임 테스트 (타임아웃 추가)
-                        import threading
-                        frame_result = [None, None]
+                        # 버퍼 비우기 - 최신 프레임까지 스킵
+                        print(f"🔄 버퍼 비우기 시작: {rtsp_url}")
+                        flush_start = time.time()
+                        frames_flushed = 0
                         
-                        def read_frame():
-                            ret, frame = cap.read()
-                            frame_result[0] = ret
-                            frame_result[1] = frame
+                        # 최대 2초 동안 버퍼 비우기
+                        while time.time() - flush_start < 2.0:
+                            ret = cap.grab()  # grab()은 read()보다 빠름
+                            if not ret:
+                                break
+                            frames_flushed += 1
+                            
+                            # 30프레임마다 실제 읽기 테스트
+                            if frames_flushed % 30 == 0:
+                                ret, test_frame = cap.retrieve()
+                                if not ret or test_frame is None:
+                                    break
                         
-                        read_thread = threading.Thread(target=read_frame)
-                        read_thread.start()
-                        read_thread.join(timeout=2.0)  # 2초 타임아웃
+                        print(f"✅ 버퍼 비우기 완료: {frames_flushed}개 프레임 스킵")
                         
-                        if read_thread.is_alive() or not frame_result[0] or frame_result[1] is None:
+                        # 최신 프레임 테스트
+                        ret, test_frame = cap.read()
+                        if ret and test_frame is not None:
+                            camera_info['cap'] = cap
+                            camera_info['is_connected'] = True
+                            camera_info['reconnect_attempts'] = 0
+                            
+                            # 프레임 읽기 스레드 시작
+                            if rtsp_url not in self.reader_threads or not self.reader_threads[rtsp_url].is_alive():
+                                reader_thread = threading.Thread(
+                                    target=self._frame_reader_thread_optimized,  # 최적화된 버전 사용
+                                    args=(rtsp_url,),
+                                    daemon=True
+                                )
+                                self.reader_threads[rtsp_url] = reader_thread
+                                reader_thread.start()
+                            
+                            return True
+                        else:
                             cap.release()
                             camera_info['reconnect_attempts'] += 1
                             camera_info['last_reconnect_time'] = current_time
-                            print(f"⚠️ 카메라 연결 실패 (타임아웃): {rtsp_url}")
                             return False
-                        
-                        camera_info['cap'] = cap
-                        camera_info['is_connected'] = True
-                        camera_info['reconnect_attempts'] = 0
-                        
-                        # 프레임 읽기 스레드 시작
-                        if rtsp_url not in self.reader_threads or not self.reader_threads[rtsp_url].is_alive():
-                            reader_thread = threading.Thread(
-                                target=self._frame_reader_thread,
-                                args=(rtsp_url,),
-                                daemon=True
-                            )
-                            self.reader_threads[rtsp_url] = reader_thread
-                            reader_thread.start()
-                        
-                        return True
                     else:
                         camera_info['reconnect_attempts'] += 1
                         camera_info['last_reconnect_time'] = current_time
@@ -158,8 +177,8 @@ class CameraStreamer:
                     return False
             return camera_info['is_connected']
     
-    def _frame_reader_thread(self, rtsp_url):
-        """별도 스레드에서 프레임을 지속적으로 읽어서 큐에 저장"""
+    def _frame_reader_thread_optimized(self, rtsp_url):
+        """최적화된 프레임 읽기 스레드 - 버퍼링 방지"""
         camera_info = self.cameras.get(rtsp_url)
         frame_queue = self.frame_queues.get(rtsp_url)
         
@@ -167,6 +186,8 @@ class CameraStreamer:
             return
         
         consecutive_failures = 0
+        last_frame_time = time.time()
+        frame_skip_counter = 0
         
         while True:
             with camera_info['lock']:
@@ -182,53 +203,76 @@ class CameraStreamer:
                 continue
             
             try:
-                ret, frame = cap.read()
+                current_time = time.time()
                 
-                if ret and frame is not None:
-                    consecutive_failures = 0
+                # 프레임 간격 체크 (실시간 유지)
+                time_since_last = current_time - last_frame_time
+                
+                # 너무 많은 프레임이 쌓였으면 스킵
+                if time_since_last < 0.03:  # 30 FPS 이상 방지
+                    time.sleep(0.01)
+                    continue
+                
+                # grab/retrieve 방식으로 최신 프레임만 가져오기
+                ret = cap.grab()
+                
+                if ret:
+                    # 버퍼에 여러 프레임이 쌓였으면 스킵
+                    while cap.grab():
+                        frame_skip_counter += 1
+                        if frame_skip_counter >= 5:  # 최대 5프레임 스킵
+                            break
                     
-                    # 이전 프레임 제거 (큐가 가득 찬 경우)
-                    try:
-                        frame_queue.get_nowait()
-                    except queue.Empty:
-                        pass
+                    # 최신 프레임 가져오기
+                    ret, frame = cap.retrieve()
                     
-                    # 새 프레임 추가
-                    try:
-                        frame_queue.put_nowait(frame)
-                    except queue.Full:
-                        pass
-                    
-                    # FPS 계산
-                    with camera_info['lock']:
-                        camera_info['fps_counter'] += 1
-                        current_time = time.time()
-                        if current_time - camera_info['last_fps_time'] >= 1.0:
-                            camera_info['avg_fps'] = camera_info['fps_counter']
-                            camera_info['fps_counter'] = 0
-                            camera_info['last_fps_time'] = current_time
+                    if ret and frame is not None:
+                        consecutive_failures = 0
+                        frame_skip_counter = 0
+                        last_frame_time = current_time
+                        
+                        # 큐가 가득 찬 경우 오래된 프레임 제거
+                        while not frame_queue.empty():
+                            try:
+                                frame_queue.get_nowait()
+                            except queue.Empty:
+                                break
+                        
+                        # 새 프레임 추가
+                        try:
+                            frame_queue.put_nowait(frame)
+                        except queue.Full:
+                            pass
+                        
+                        # FPS 계산
+                        with camera_info['lock']:
+                            camera_info['fps_counter'] += 1
+                            if current_time - camera_info['last_fps_time'] >= 1.0:
+                                camera_info['avg_fps'] = camera_info['fps_counter']
+                                camera_info['fps_counter'] = 0
+                                camera_info['last_fps_time'] = current_time
+                    else:
+                        consecutive_failures += 1
                 else:
                     consecutive_failures += 1
-                    if consecutive_failures > 10:
-                        with camera_info['lock']:
-                            camera_info['is_connected'] = False
-                            if camera_info['cap']:
-                                camera_info['cap'].release()
-                                camera_info['cap'] = None
-                        break
                 
-                # 백그라운드 모드에서는 더 적은 CPU 사용을 위해 대기 시간 조정
-                is_background_only = self.background_streaming.get(rtsp_url, False) and stream_count <= 1
-                if is_background_only:
-                    time.sleep(0.04)  # 백그라운드 전용 모드: 25 FPS
-                else:
-                    time.sleep(0.001)  # 실시간 스트리밍 모드: 고성능
+                # 연속 실패 시 재연결
+                if consecutive_failures > 10:
+                    print(f"⚠️ 연속 실패 10회 초과 - 카메라 재연결 필요: {rtsp_url}")
+                    with camera_info['lock']:
+                        camera_info['is_connected'] = False
+                        if camera_info['cap']:
+                            camera_info['cap'].release()
+                            camera_info['cap'] = None
+                    break
+                
+                # CPU 사용량 조절
+                time.sleep(0.02)  # 50 FPS 제한
                 
             except Exception as e:
                 print(f"Frame reading error for {rtsp_url}: {e}")
                 consecutive_failures += 1
                 if consecutive_failures > 10:
-                    print(f"⚠️ 연속 실패 10회 초과 - 카메라 연결 해제: {rtsp_url}")
                     with camera_info['lock']:
                         camera_info['is_connected'] = False
                         if camera_info['cap']:
@@ -238,8 +282,36 @@ class CameraStreamer:
                                 pass
                             camera_info['cap'] = None
                     break
-                time.sleep(0.5)  # 에러 시 짧은 대기
-    
+                time.sleep(0.5)
+
+    def flush_camera_buffer(self, rtsp_url):
+        """수동으로 카메라 버퍼 비우기. 자동으로 사용하지는 않음"""
+        camera_info = self.cameras.get(rtsp_url)
+        if not camera_info:
+            return False
+        
+        with camera_info['lock']:
+            cap = camera_info['cap']
+            if not cap:
+                return False
+            
+            print(f"🔄 버퍼 플러시 시작: {rtsp_url}")
+            frames_flushed = 0
+            flush_start = time.time()
+            
+            # 최대 1초 동안 버퍼 비우기
+            while time.time() - flush_start < 1.0:
+                ret = cap.grab()
+                if not ret:
+                    break
+                frames_flushed += 1
+                
+                if frames_flushed >= 30:  # 최대 30프레임
+                    break
+            
+            print(f"✅ 버퍼 플러시 완료: {frames_flushed}개 프레임 제거")
+            return True
+        
     def generate_frames(self, rtsp_url):
         # print(f"🎬 generate_frames 시작: {rtsp_url}")
         
