@@ -178,7 +178,7 @@ class CameraStreamer:
             return camera_info['is_connected']
     
     def _frame_reader_thread_optimized(self, rtsp_url):
-        """최적화된 프레임 읽기 스레드 - 버퍼링 방지"""
+        """프레임 읽기 스레드 - 큐 관리 개선"""
         camera_info = self.cameras.get(rtsp_url)
         frame_queue = self.frame_queues.get(rtsp_url)
         
@@ -196,53 +196,67 @@ class CameraStreamer:
                     break
                 stream_count = camera_info['stream_count']
             
-            # 백그라운드 스트리밍 모드이거나 실제 시청자가 있는 경우에만 프레임 읽기
+            # 아무도 보고 있지 않으면 프레임 읽기 중단
             is_background = self.background_streaming.get(rtsp_url, False)
             if stream_count <= 0 and not is_background:
-                time.sleep(0.1)
+                # 큐 비우기
+                while not frame_queue.empty():
+                    try:
+                        frame_queue.get_nowait()
+                    except:
+                        break
+                time.sleep(0.5)
                 continue
             
             try:
                 current_time = time.time()
                 
-                # 프레임 간격 체크 (실시간 유지)
-                time_since_last = current_time - last_frame_time
-                
-                # 너무 많은 프레임이 쌓였으면 스킵
-                if time_since_last < 0.03:  # 30 FPS 이상 방지
-                    time.sleep(0.01)
-                    continue
-                
-                # grab/retrieve 방식으로 최신 프레임만 가져오기
+                # 프레임 읽기
                 ret = cap.grab()
                 
                 if ret:
-                    # 버퍼에 여러 프레임이 쌓였으면 스킵
-                    while cap.grab():
-                        frame_skip_counter += 1
-                        if frame_skip_counter >= 5:  # 최대 5프레임 스킵
-                            break
+                    # 최신 프레임만 유지 (큐 크기 체크)
+                    if frame_queue.qsize() >= 3:
+                        # 큐가 3개 이상이면 하나 빼고 새로 넣기
+                        try:
+                            old_frame = frame_queue.get_nowait()
+                            if isinstance(old_frame, dict):
+                                # 로그 줄이기 (10번에 1번만)
+                                if frame_skip_counter % 10 == 0:
+                                    print(f"🔄 큐 정리 중 (크기: {frame_queue.qsize()})")
+                        except queue.Empty:
+                            pass
                     
-                    # 최신 프레임 가져오기
                     ret, frame = cap.retrieve()
                     
                     if ret and frame is not None:
                         consecutive_failures = 0
-                        frame_skip_counter = 0
+                        frame_skip_counter += 1
                         last_frame_time = current_time
                         
-                        # 큐가 가득 찬 경우 오래된 프레임 제거
-                        while not frame_queue.empty():
-                            try:
-                                frame_queue.get_nowait()
-                            except queue.Empty:
-                                break
+                        # 타임스탬프 추가 (선택적)
+                        timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                        
+                        # 화면에 타임스탬프 표시 (디버깅용, 필요시 주석 처리)
+                        # cv2.putText(frame, timestamp_str, (10, 30), 
+                        #            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                        
+                        frame_data = {
+                            'frame': frame,
+                            'timestamp': current_time,
+                            'timestamp_str': timestamp_str
+                        }
                         
                         # 새 프레임 추가
                         try:
-                            frame_queue.put_nowait(frame)
+                            frame_queue.put_nowait(frame_data)
                         except queue.Full:
-                            pass
+                            # 큐가 가득 차면 가장 오래된 것 제거 후 추가
+                            try:
+                                frame_queue.get_nowait()
+                                frame_queue.put_nowait(frame_data)
+                            except:
+                                pass
                         
                         # FPS 계산
                         with camera_info['lock']:
@@ -251,38 +265,15 @@ class CameraStreamer:
                                 camera_info['avg_fps'] = camera_info['fps_counter']
                                 camera_info['fps_counter'] = 0
                                 camera_info['last_fps_time'] = current_time
-                    else:
-                        consecutive_failures += 1
-                else:
-                    consecutive_failures += 1
                 
-                # 연속 실패 시 재연결
-                if consecutive_failures > 10:
-                    print(f"⚠️ 연속 실패 10회 초과 - 카메라 재연결 필요: {rtsp_url}")
-                    with camera_info['lock']:
-                        camera_info['is_connected'] = False
-                        if camera_info['cap']:
-                            camera_info['cap'].release()
-                            camera_info['cap'] = None
-                    break
-                
-                # CPU 사용량 조절
-                time.sleep(0.02)  # 50 FPS 제한
+                # 적절한 대기 시간
+                # time.sleep(0.04)  # 25 FPS
                 
             except Exception as e:
-                print(f"Frame reading error for {rtsp_url}: {e}")
+                print(f"Frame reading error: {e}")
                 consecutive_failures += 1
                 if consecutive_failures > 10:
-                    with camera_info['lock']:
-                        camera_info['is_connected'] = False
-                        if camera_info['cap']:
-                            try:
-                                camera_info['cap'].release()
-                            except:
-                                pass
-                            camera_info['cap'] = None
                     break
-                time.sleep(0.5)
 
     def flush_camera_buffer(self, rtsp_url):
         """수동으로 카메라 버퍼 비우기. 자동으로 사용하지는 않음"""
@@ -313,26 +304,16 @@ class CameraStreamer:
             return True
         
     def generate_frames(self, rtsp_url):
-        # print(f"🎬 generate_frames 시작: {rtsp_url}")
-        
+        """영상 스트리밍 - dict 형식 프레임 처리"""
         try:
-            # print(f"🔍 카메라 정보 가져오는 중...")
             camera_info = self.get_camera_stream(rtsp_url)
-            # print(f"✅ 카메라 정보 획득 완료")
-            
-            # print(f"🔍 프레임 큐 가져오는 중...")
             frame_queue = self.frame_queues.get(rtsp_url)
-            # print(f"📊 프레임 큐 상태: {frame_queue is not None}")
             
-            # print(f"🔒 카메라 락 획득 시도...")
             with camera_info['lock']:
                 camera_info['stream_count'] += 1
-                # print(f"📈 stream_count 증가: {camera_info['stream_count']}")
                 
         except Exception as e:
             print(f"❌ generate_frames 초기화 오류: {e}")
-            import traceback
-            traceback.print_exc()
             return
         
         last_frame = None
@@ -341,11 +322,8 @@ class CameraStreamer:
         try:
             while True:
                 connection_result = self.connect_camera(rtsp_url)
-                # print(f"🔌 카메라 연결 상태: {connection_result}")
                 
                 if not connection_result:
-                    # print(f"❌ 카메라 연결 실패 - 에러 프레임 전송")
-                    pass
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + 
                            self.get_error_frame("Camera Disconnected") + b'\r\n')
@@ -353,18 +331,29 @@ class CameraStreamer:
                     continue
                 
                 try:
-                    # 큐에서 최신 프레임 가져오기 (타임아웃 설정)
-                    # print(f"📥 프레임 큐에서 데이터 대기 중...")
-                    frame = frame_queue.get(timeout=0.5)
-                    # print(f"✅ 프레임 수신 성공: {frame.shape if frame is not None else 'None'}")
+                    # 큐에서 프레임 가져오기
+                    frame_data = frame_queue.get(timeout=0.5)
+                    
+                    # dict 형식인지 확인하고 프레임 추출
+                    if isinstance(frame_data, dict):
+                        frame = frame_data.get('frame')
+                        timestamp_str = frame_data.get('timestamp_str', '')
+                        
+                        # 디버깅용 로그 (필요시 주석 해제)
+                        # print(f"📺 스트리밍 프레임: {timestamp_str}")
+                    else:
+                        # 구버전 호환성 (프레임만 있는 경우)
+                        frame = frame_data
+                    
+                    if frame is None:
+                        continue
+                    
                     last_frame = frame
                     error_count = 0
+                    
                 except queue.Empty:
-                    # print(f"⏰ 프레임 큐 타임아웃 (에러 카운트: {error_count + 1})")
-                    pass
                     error_count += 1
                     if error_count > 10:
-                        # 10회 이상 프레임을 못 받으면 연결 문제로 판단
                         with camera_info['lock']:
                             camera_info['is_connected'] = False
                         yield (b'--frame\r\n'
@@ -372,12 +361,11 @@ class CameraStreamer:
                                self.get_error_frame("No Signal") + b'\r\n')
                         continue
                     elif last_frame is not None:
-                        # 마지막 프레임 재사용
                         frame = last_frame
                     else:
                         continue
                 
-                # JPEG 인코딩 (품질 조정으로 네트워크 부하 감소)
+                # JPEG 인코딩
                 encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 70]
                 _, buffer = cv2.imencode('.jpg', frame, encode_param)
                 frame_bytes = buffer.tobytes()
@@ -387,18 +375,15 @@ class CameraStreamer:
                        b'Content-Length: ' + f'{len(frame_bytes)}'.encode() + b'\r\n\r\n' + 
                        frame_bytes + b'\r\n')
                 
-                # 프레임 레이트 제어 (25 FPS)
-                time.sleep(0.04)
+                # time.sleep(0.04)  # 25 FPS
                 
         except GeneratorExit:
             pass
         finally:
             with camera_info['lock']:
                 camera_info['stream_count'] -= 1
-                # 백그라운드 스트리밍이 활성화되어 있으면 카메라 리소스 정리하지 않음
                 is_background = self.background_streaming.get(rtsp_url, False)
                 if camera_info['stream_count'] <= 0 and not is_background:
-                    # 웹 스트림이 모두 종료되고 백그라운드도 비활성이면 카메라 연결 해제
                     if camera_info['cap']:
                         camera_info['cap'].release()
                         camera_info['cap'] = None
@@ -605,7 +590,7 @@ class AIDetectionSystem:
                 matplotlib.use('Agg')
             
             # YOLO11 모델 로드
-            yolo_path = os.path.join(settings.BASE_DIR, 'CCTV', 'yolo11n.pt')
+            yolo_path = os.path.join(settings.BASE_DIR, 'CCTV', 'yolo11m.pt')
             print(f"  - YOLO 모델 경로: {yolo_path}")
             print(f"  - YOLO 모델 존재: {os.path.exists(yolo_path)}")
             
@@ -664,99 +649,59 @@ class AIDetectionSystem:
             print(f"⏹️ 카메라 ID {camera_id} 탐지 중지")
     
     def _detection_worker(self, camera):
-        """카메라별 탐지 워커 스레드 - 스트림 공유 버전"""
-        # from .models import TargetLabel, DetectionLog
+        """카메라별 탐지 워커 - 타임스탬프 표시 버전"""
+        from .models import TargetLabel, DetectionLog
         
         print(f"\n🚀 탐지 워커 시작: 카메라 '{camera.name}' (ID: {camera.id})")
-        consecutive_failures = 0
-        connection_retry_count = 0
+        last_detection_time = time.time()
         
         while self.detection_active.get(camera.id, False):
             try:
-                # 먼저 카메라 연결 확인 (기존 연결 재사용)
                 camera_info = camera_streamer.get_camera_stream(camera.rtsp_url)
                 
-                # 연결이 없으면 새로 연결 시도
                 if not camera_info['is_connected']:
-                    connection_retry_count += 1
-                    
-                    # 3회 실패 시 대기 시간 증가
-                    if connection_retry_count > 3:
-                        print(f"⚠️ 카메라 '{camera.name}' 연결 시도 {connection_retry_count}회 실패")
-                        
-                        # 스트리밍 중인지 확인
-                        if camera_info.get('stream_count', 0) > 0:
-                            print(f"📺 카메라 '{camera.name}'는 스트리밍 중입니다. 스트림 공유 대기...")
-                            time.sleep(2)  # 짧은 대기 후 재시도
-                            connection_retry_count = 0  # 카운터 리셋
-                            continue
-                        else:
-                            print(f"🔄 카메라 '{camera.name}' 독립 연결 시도...")
-                            # 스트리밍이 없으면 독립적으로 연결
-                            if camera_streamer.connect_camera(camera.rtsp_url):
-                                print(f"✅ 카메라 '{camera.name}' 연결 성공")
-                                connection_retry_count = 0
-                                consecutive_failures = 0
-                            else:
-                                print(f"❌ 카메라 '{camera.name}' 연결 실패, 30초 대기")
-                                time.sleep(30)
-                                continue
-                    else:
-                        # 연결 시도
-                        print(f"🔌 카메라 '{camera.name}' 연결 시도 {connection_retry_count}/3")
-                        if camera_streamer.connect_camera(camera.rtsp_url):
-                            connection_retry_count = 0
-                            consecutive_failures = 0
-                        else:
-                            time.sleep(2)
-                            continue
-                else:
-                    # 연결되어 있으면 카운터 리셋
-                    connection_retry_count = 0
-                    consecutive_failures = 0
+                    print(f"⚠️ 카메라 '{camera.name}' 연결되지 않음")
+                    time.sleep(2)
+                    continue
                 
-                # 프레임 큐에서 최신 프레임 가져오기
                 frame_queue = camera_streamer.frame_queues.get(camera.rtsp_url)
                 if not frame_queue:
-                    print(f"⚠️ 카메라 '{camera.name}' 프레임 큐 없음")
                     time.sleep(1)
                     continue
                 
-                # 프레임 가져오기 (공유된 큐에서)
-                frame = None
+                # 프레임 가져오기
+                frame_data = None
                 try:
-                    # 타임아웃을 짧게 설정하여 빠른 재시도
-                    frame = frame_queue.get(timeout=1.0)
-                    
-                    # 큐가 너무 많이 쌓였으면 최신 프레임만 사용
-                    queue_size = frame_queue.qsize()
-                    if queue_size > 2:
-                        print(f"📦 큐 크기: {queue_size}, 최신 프레임으로 스킵")
-                        while queue_size > 1:
-                            try:
-                                frame = frame_queue.get_nowait()
-                                queue_size -= 1
-                            except queue.Empty:
-                                break
-                    
-                    if frame is not None:
-                        print(f"📹 프레임 획득: 카메라 '{camera.name}' - 크기: {frame.shape}")
+                    frame_data = frame_queue.get(timeout=1.0)
                 except queue.Empty:
-                    # 큐가 비어있으면 스트림이 활성화될 때까지 대기
-                    if camera_info.get('stream_count', 0) > 0:
-                        # 스트리밍 중이면 프레임을 기다림
-                        print(f"⏳ 카메라 '{camera.name}' 프레임 대기 중 (스트리밍 활성)")
-                        time.sleep(0.5)
-                        continue
-                    else:
-                        # 스트리밍이 없으면 백그라운드 모드 활성화
-                        print(f"🔄 카메라 '{camera.name}' 백그라운드 모드 활성화")
-                        camera_streamer.start_background_streaming(camera.rtsp_url)
-                        time.sleep(2)
-                        continue
+                    time.sleep(0.5)
+                    continue
+                
+                # 프레임 데이터 추출
+                if isinstance(frame_data, dict):
+                    frame = frame_data.get('frame')
+                    frame_timestamp = frame_data.get('timestamp_str', 'Unknown')
+                    frame_age = time.time() - frame_data.get('timestamp', time.time())
+                else:
+                    # 구버전 호환성
+                    frame = frame_data
+                    frame_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    frame_age = 0
                 
                 if frame is None:
-                    time.sleep(0.5)
+                    continue
+                
+                # 프레임 정보 출력
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                print(f"\n📹 프레임 획득: 카메라 '{camera.name}'")
+                print(f"   - 프레임 캡처 시간: {frame_timestamp}")
+                print(f"   - 현재 처리 시간: {current_time}")
+                print(f"   - 프레임 지연: {frame_age:.2f}초")
+                print(f"   - 프레임 크기: {frame.shape}")
+                
+                # 프레임이 너무 오래되었으면 스킵
+                if frame_age > 5.0:
+                    print(f"   ⚠️ 프레임이 너무 오래됨 ({frame_age:.1f}초), 스킵")
                     continue
                 
                 # 타겟 라벨 가져오기
@@ -768,22 +713,32 @@ class AIDetectionSystem:
                 
                 print(f"🎯 타겟 라벨 {len(target_labels)}개로 탐지 시작")
                 
+                # 탐지 시작 시간 기록
+                detection_start = time.time()
+                
                 # 객체 탐지 수행
-                detections = self._detect_objects(frame, target_labels)
+                # detections = self._detect_objects(frame, target_labels)
+                detections = self._detect_objects(frame, target_labels, camera)
+
+                # 탐지 소요 시간
+                detection_duration = time.time() - detection_start
+                print(f"⏱️ 탐지 소요 시간: {detection_duration:.2f}초")
                 
                 # 탐지 결과 처리
                 if detections:
-                    print(f"✨ 탐지 완료! {len(detections)}개 타겟 발견")
+                    print(f"✨ 탐지 완료! {len(detections)}개 타겟 발견 (시간: {current_time})")
                     for detection in detections:
                         self._process_detection(camera, frame, detection, target_labels)
-                
-                # 탐지 간격 조정 (스트리밍 상태에 따라)
-                if camera_info.get('stream_count', 0) > 0:
-                    # 스트리밍 중이면 더 자주 탐지
-                    time.sleep(1.0)
                 else:
-                    # 백그라운드 모드면 간격 증가
-                    time.sleep(2.0)
+                    print(f"💤 탐지된 객체 없음 (시간: {current_time})")
+                
+                # 탐지 간격 계산 및 표시
+                time_since_last = time.time() - last_detection_time
+                print(f"📊 탐지 주기: {time_since_last:.1f}초")
+                last_detection_time = time.time()
+                
+                # 탐지 간격
+                time.sleep(1.5)
                 
             except Exception as e:
                 print(f"❌ 탐지 워커 오류 (카메라: {camera.name}): {e}")
@@ -792,96 +747,156 @@ class AIDetectionSystem:
                 time.sleep(2)
         
         print(f"🛑 탐지 워커 종료: 카메라 '{camera.name}'")
-    
-    def _detect_objects(self, frame, target_labels):
-        """프레임에서 객체 탐지 - 바운딩 박스 정보 포함"""
+
+    def _detect_objects(self, frame, target_labels, camera):
+        """
+        Softmax 방식으로 객체 탐지
+        - YOLO는 후보 박스만 제공
+        - CLIP이 모든 라벨 + "other object"를 동시에 비교
+        - "other object"가 최고점이면 무시
+        """
         detections = []
         
+        # 임계치 설정
+        YOLO_CANDIDATE_THRESHOLD = 0.55   # YOLO 후보 박스 임계치
+        CLIP_CONFIDENCE_THRESHOLD = 0.65   # CLIP softmax 최소 신뢰도
+        
         if self.yolo_model is None or self.clip_model is None:
-            print("⚠️ 디버그: YOLO 또는 CLIP 모델이 로드되지 않음")
+            print("⚠️ YOLO 또는 CLIP 모델이 로드되지 않음")
             return detections
         
         try:
-            # YOLO로 1차 객체 탐지 (바운딩 박스 획득)
-            results = self.yolo_model(frame, verbose=False)
+            # 1. YOLO로 후보 박스 추출
+            results = self.yolo_model(frame, conf=YOLO_CANDIDATE_THRESHOLD, verbose=True)
             
             if not results or len(results) == 0:
                 return detections
             
             yolo_result = results[0]
             
-            if hasattr(yolo_result, 'boxes') and yolo_result.boxes is not None:
+            if not hasattr(yolo_result, 'boxes') or yolo_result.boxes is not None:
                 boxes = yolo_result.boxes.xyxy.cpu().numpy()
                 confidences = yolo_result.boxes.conf.cpu().numpy() if yolo_result.boxes.conf is not None else []
+                classes = yolo_result.boxes.cls.cpu().numpy() if yolo_result.boxes.cls is not None else []
                 
-                # 신뢰도 0.72 이상인 바운딩 박스만 사용
-                high_conf_mask = confidences >= 0.6
-                valid_boxes = boxes[high_conf_mask]
-                valid_confidences = confidences[high_conf_mask]
-                
-                if len(valid_boxes) == 0:
+                if len(boxes) == 0:
                     return detections
                 
-                # 각 타겟 라벨에 대해 CLIP으로 분류
-                for target_label in target_labels:
-                    detected_boxes = []
+                print(f"📊 YOLO 후보 박스: {len(boxes)}개 탐지")
+                
+                # YOLO 클래스 이름 가져오기 (디버깅용)
+                class_names = yolo_result.names if hasattr(yolo_result, 'names') else {}
+                
+                # 2. CLIP을 위한 텍스트 준비 (DB 라벨 + "other object")
+                text_queries = []
+                label_indices = []  # 각 쿼리가 어떤 라벨에 해당하는지 추적
+                
+                # DB에서 가져온 라벨들
+                for i, target_label in enumerate(target_labels):
+                    query = f"a photo of {target_label.label_name}"
+                    text_queries.append(query)
+                    label_indices.append(i)
+                
+                # "other object" 추가 (항상 마지막)
+                text_queries.append("other object")
+                other_object_idx = len(text_queries) - 1
+                
+                print(f"🎯 비교할 라벨: {[tl.display_name for tl in target_labels]} + 'other object'")
+                
+                # 텍스트 토큰화
+                text_tokens = clip.tokenize(text_queries).to(self.device)
+                
+                with torch.no_grad():
+                    text_features = self.clip_model.encode_text(text_tokens)
+                    text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+                
+                # 3. 각 타겟 라벨별로 탐지된 박스들을 수집
+                label_detections = {i: [] for i in range(len(target_labels))}
+                
+                # 4. 각 박스에 대해 CLIP으로 분류
+                for box_idx, (box, yolo_conf, cls) in enumerate(zip(boxes, confidences, classes)):
+                    x1, y1, x2, y2 = map(int, box)
+                    cropped_region = frame[y1:y2, x1:x2]
                     
-                    for idx, (box, yolo_conf) in enumerate(zip(valid_boxes, valid_confidences)):
-                        x1, y1, x2, y2 = map(int, box)
-                        cropped_region = frame[y1:y2, x1:x2]
+                    if cropped_region.size == 0:
+                        continue
+                    
+                    # YOLO 클래스 이름 (디버깅용)
+                    yolo_class = class_names.get(int(cls), f'class_{int(cls)}')
+                    
+                    # CLIP으로 이미지 인코딩
+                    pil_crop = Image.fromarray(cv2.cvtColor(cropped_region, cv2.COLOR_BGR2RGB))
+                    crop_tensor = self.clip_preprocess(pil_crop).unsqueeze(0).to(self.device)
+                    
+                    with torch.no_grad():
+                        crop_features = self.clip_model.encode_image(crop_tensor)
+                        crop_features = crop_features / crop_features.norm(dim=-1, keepdim=True)
                         
-                        if cropped_region.size > 0:
-                            # CLIP으로 해당 영역 분류
-                            pil_crop = Image.fromarray(cv2.cvtColor(cropped_region, cv2.COLOR_BGR2RGB))
-                            crop_tensor = self.clip_preprocess(pil_crop).unsqueeze(0).to(self.device)
-                            
-                            text_query = f"a photo of {target_label.label_name}"
-                            text_token = clip.tokenize([text_query]).to(self.device)
-                            
-                            with torch.no_grad():
-                                # 특징 추출
-                                crop_features = self.clip_model.encode_image(crop_tensor)
-                                text_features = self.clip_model.encode_text(text_token)
-                                
-                                # L2 정규화 (중요!)
-                                crop_features = crop_features / crop_features.norm(dim=-1, keepdim=True)
-                                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
-                                
-                                # 코사인 유사도 계산 (이제 -1에서 1 사이)
-                                similarity = (crop_features @ text_features.T).cpu().numpy()[0][0]
-                                
-                                # 0-1 범위로 변환 (선택적)
-                                similarity_normalized = (similarity + 1) / 2
-                                
-                                print(f"     CLIP 유사도: 원본={similarity:.3f}, 정규화={similarity_normalized:.3f}")
-                            
-                            # CLIP 임계값 (정규화된 값 기준으로 조정)
-                            if similarity_normalized > 0.72:  # 신뢰도.
-                                # YOLO 신뢰도와 CLIP 유사도의 평균 사용
-                                combined_confidence = (float(yolo_conf) + float(similarity_normalized)) / 2
-                                
-                                detected_boxes.append({
-                                    'box': [x1, y1, x2, y2],
-                                    'confidence': combined_confidence,  # 결합된 신뢰도
-                                    'yolo_confidence': float(yolo_conf),
-                                    'clip_similarity': float(similarity_normalized)
-                                })
-                                print(f"     ✅ Box{idx}: 매칭! (YOLO={yolo_conf:.2f}, CLIP={similarity_normalized:.2f}, 결합={combined_confidence:.2f})")
+                        # 모든 텍스트와의 유사도 계산
+                        logits = (crop_features @ text_features.T) * 100.0  # CLIP의 temperature scaling
+                        
+                        # Softmax 적용
+                        probs = logits.softmax(dim=-1).cpu().numpy()[0]
                     
-                    # 해당 라벨로 분류된 객체가 있다면 탐지 결과에 추가
+                    # 가장 높은 확률의 라벨 찾기
+                    best_idx = int(np.argmax(probs))
+                    best_prob = float(probs[best_idx])
+                    
+                    print(f"   Box{box_idx} [{yolo_class}]: ", end="")
+                    for i, (query, prob) in enumerate(zip(text_queries, probs)):
+                        if i < len(target_labels):
+                            print(f"{target_labels[i].display_name}={prob:.2f} ", end="")
+                        else:
+                            print(f"other={prob:.2f} ", end="")
+                    print()
+                    
+                    # "other object"가 최고점이면 무시
+                    if best_idx == other_object_idx:
+                        print(f"      ❌ 'other object'로 분류됨 ({best_prob:.2f}) - 무시")
+                        continue
+                    
+                    # 신뢰도가 임계치 미만이면 무시
+                    if best_prob < CLIP_CONFIDENCE_THRESHOLD:
+                        print(f"      ❌ 신뢰도 부족 ({best_prob:.2f} < {CLIP_CONFIDENCE_THRESHOLD})")
+                        continue
+                    
+                    # 해당 라벨로 분류
+                    label_idx = label_indices[best_idx]
+                    target_label = target_labels[label_idx]
+                    
+                    print(f"      ✅ '{target_label.display_name}'로 탐지! (신뢰도: {best_prob:.2f})")
+                    
+                    label_detections[label_idx].append({
+                        'box': [x1, y1, x2, y2],
+                        'confidence': best_prob,
+                        'yolo_confidence': float(yolo_conf),
+                        'clip_probability': best_prob,
+                        'yolo_class': yolo_class
+                    })
+                
+                # 5. 각 라벨별로 탐지 결과 생성
+                for label_idx, detected_boxes in label_detections.items():
                     if detected_boxes:
-                        # 평균 신뢰도 계산
+                        target_label = target_labels[label_idx]
                         avg_confidence = sum(box['confidence'] for box in detected_boxes) / len(detected_boxes)
                         
-                        detections.append({
+                        detection = {
                             'label': target_label,
-                            'confidence': float(avg_confidence),  # 0-1 범위
+                            'confidence': float(avg_confidence),
                             'count': len(detected_boxes),
                             'has_alert': target_label.has_alert,
                             'boxes': detected_boxes
-                        })
+                        }
                         
-                        print(f"     🎯 최종 탐지: {len(detected_boxes)}개 (평균 신뢰도: {avg_confidence:.1%})")
+                        detections.append(detection)
+                        
+                        print(f"\n🎯 {target_label.display_name} 최종 탐지:")
+                        print(f"   - 박스 수: {len(detected_boxes)}개")
+                        print(f"   - 평균 신뢰도: {avg_confidence:.1%}")
+                        print(f"   - 경고 설정: {'활성' if target_label.has_alert else '비활성'}")
+                
+                if not detections:
+                    print(f"💤 탐지된 유효 객체 없음 (모두 'other object'이거나 신뢰도 미달)")
             
         except Exception as e:
             print(f"❌ 객체 탐지 오류: {e}")
@@ -889,6 +904,104 @@ class AIDetectionSystem:
             traceback.print_exc()
         
         return detections
+
+
+    # def _detect_objects(self, frame, target_labels):
+    #     """프레임에서 객체 탐지 - 바운딩 박스 정보 포함"""
+    #     detections = []
+        
+    #     if self.yolo_model is None or self.clip_model is None:
+    #         print("⚠️ 디버그: YOLO 또는 CLIP 모델이 로드되지 않음")
+    #         return detections
+        
+    #     try:
+    #         # YOLO로 1차 객체 탐지 (바운딩 박스 획득)
+    #         results = self.yolo_model(frame, verbose=False)
+            
+    #         if not results or len(results) == 0:
+    #             return detections
+            
+    #         yolo_result = results[0]
+            
+    #         if hasattr(yolo_result, 'boxes') and yolo_result.boxes is not None:
+    #             boxes = yolo_result.boxes.xyxy.cpu().numpy()
+    #             confidences = yolo_result.boxes.conf.cpu().numpy() if yolo_result.boxes.conf is not None else []
+                
+    #             # 신뢰도 0.6 이상인 바운딩 박스만 사용
+    #             high_conf_mask = confidences >= 0.2
+    #             valid_boxes = boxes[high_conf_mask]
+    #             valid_confidences = confidences[high_conf_mask]
+                
+    #             if len(valid_boxes) == 0:
+    #                 return detections
+                
+    #             # 각 타겟 라벨에 대해 CLIP으로 분류
+    #             for target_label in target_labels:
+    #                 detected_boxes = []
+                    
+    #                 for idx, (box, yolo_conf) in enumerate(zip(valid_boxes, valid_confidences)):
+    #                     x1, y1, x2, y2 = map(int, box)
+    #                     cropped_region = frame[y1:y2, x1:x2]
+                        
+    #                     if cropped_region.size > 0:
+    #                         # CLIP으로 해당 영역 분류
+    #                         pil_crop = Image.fromarray(cv2.cvtColor(cropped_region, cv2.COLOR_BGR2RGB))
+    #                         crop_tensor = self.clip_preprocess(pil_crop).unsqueeze(0).to(self.device)
+                            
+    #                         text_query = f"a photo of {target_label.label_name}"
+    #                         text_token = clip.tokenize([text_query]).to(self.device)
+                            
+    #                         with torch.no_grad():
+    #                             # 특징 추출
+    #                             crop_features = self.clip_model.encode_image(crop_tensor)
+    #                             text_features = self.clip_model.encode_text(text_token)
+                                
+    #                             # L2 정규화 (중요!)
+    #                             crop_features = crop_features / crop_features.norm(dim=-1, keepdim=True)
+    #                             text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+                                
+    #                             # 코사인 유사도 계산 (이제 -1에서 1 사이)
+    #                             similarity = (crop_features @ text_features.T).cpu().numpy()[0][0]
+                                
+    #                             # 0-1 범위로 변환 (선택적)
+    #                             similarity_normalized = (similarity + 1) / 2
+                                
+    #                             print(f"     CLIP 유사도: 원본={similarity:.3f}, 정규화={similarity_normalized:.3f}")
+                            
+    #                         # CLIP 임계값 (정규화된 값 기준으로 조정)
+    #                         if similarity_normalized > 0.6:  # 신뢰도.
+    #                             # YOLO 신뢰도와 CLIP 유사도의 평균 사용
+    #                             combined_confidence = (float(yolo_conf) + float(similarity_normalized)) / 2
+                                
+    #                             detected_boxes.append({
+    #                                 'box': [x1, y1, x2, y2],
+    #                                 'confidence': combined_confidence,  # 결합된 신뢰도
+    #                                 'yolo_confidence': float(yolo_conf),
+    #                                 'clip_similarity': float(similarity_normalized)
+    #                             })
+    #                             print(f"     ✅ Box{idx}: 매칭! (YOLO={yolo_conf:.2f}, CLIP={similarity_normalized:.2f}, 결합={combined_confidence:.2f})")
+                    
+    #                 # 해당 라벨로 분류된 객체가 있다면 탐지 결과에 추가
+    #                 if detected_boxes:
+    #                     # 평균 신뢰도 계산
+    #                     avg_confidence = sum(box['confidence'] for box in detected_boxes) / len(detected_boxes)
+                        
+    #                     detections.append({
+    #                         'label': target_label,
+    #                         'confidence': float(avg_confidence),  # 0-1 범위
+    #                         'count': len(detected_boxes),
+    #                         'has_alert': target_label.has_alert,
+    #                         'boxes': detected_boxes
+    #                     })
+                        
+    #                     print(f"     🎯 최종 탐지: {len(detected_boxes)}개 (평균 신뢰도: {avg_confidence:.1%})")
+            
+    #     except Exception as e:
+    #         print(f"❌ 객체 탐지 오류: {e}")
+    #         import traceback
+    #         traceback.print_exc()
+        
+    #     return detections
 
     def _process_detection(self, camera, frame, detection, target_labels):
         """탐지 결과 처리 - 바운딩 박스 포함 스크린샷"""
@@ -937,6 +1050,7 @@ class AIDetectionSystem:
             print(f"❌ 탐지 결과 처리 오류: {e}")
             import traceback
             traceback.print_exc()
+
     def _draw_detection_boxes(self, frame, detection):
         """프레임에 바운딩 박스와 라벨 그리기 (한글 지원)"""
         # 프레임 복사 (원본 보존)
