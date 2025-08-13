@@ -9,7 +9,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 start_time = time.time()
 
 model_list = ["ViT-L/14@336px", "ViT-L/14", "ViT-B/16", "ViT-B/32"]
-model_name = model_list[1]
+model_name = model_list[2]
 
 model, preprocess = clip.load(model_name, device=device)
 print(f"모델 이름 : {model_name}")
@@ -27,7 +27,7 @@ preprocess_time = time.time() - start_time
 print(f"Preprocess time: {preprocess_time:.4f} sec")
 
 # print(clip.available_models())
-texts = clip.tokenize(["a monitor", "a chair", "a person", "other object"]).to(device)
+texts = clip.tokenize(["a person", "other object"]).to(device)
 
 # 추론 시간 측정
 start_time = time.time()

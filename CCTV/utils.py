@@ -605,20 +605,21 @@ class AIDetectionSystem:
                 # YOLO 클래스 정보 출력
                 if hasattr(self.yolo_model, 'model') and hasattr(self.yolo_model.model, 'names'):
                     print(f"  - YOLO 클래스 수: {len(self.yolo_model.model.names)}")
-                    print(f"  - YOLO 주요 클래스: {list(self.yolo_model.model.names.values())[:10]}...")
+                    # print(f"  - YOLO 주요 클래스: {list(self.yolo_model.model.names.values())[:10]}...")
+                    print(f"  - YOLO 주요 클래스: {list(self.yolo_model.model.names.values())}...")
             else:
                 print(f"❌ YOLO11 모델 파일을 찾을 수 없습니다: {yolo_path}")
             
             # CLIP 모델 로드
             try:
                 print(f"\n  - CLIP 모델 로드 중...")
-                self.clip_model, self.clip_preprocess = clip.load("ViT-B/32", device=self.device)
+                self.clip_model, self.clip_preprocess = clip.load("ViT-L/14@336px", device=self.device)
                 print(f"✅ CLIP 모델 로드 완료 (device: {self.device})")
             except Exception as clip_error:
                 # CLIP 모델 로드 실패 시 CPU로 재시도
                 print(f"⚠️ CLIP GPU 로드 실패, CPU로 재시도: {clip_error}")
                 self.device = "cpu"
-                self.clip_model, self.clip_preprocess = clip.load("ViT-B/32", device=self.device)
+                self.clip_model, self.clip_preprocess = clip.load("ViT-L/14@336px", device=self.device)
                 print(f"✅ CLIP 모델 CPU 로드 완료")
             
         except Exception as e:
@@ -758,8 +759,8 @@ class AIDetectionSystem:
         detections = []
         
         # 임계치 설정
-        YOLO_CANDIDATE_THRESHOLD = 0.55   # YOLO 후보 박스 임계치
-        CLIP_CONFIDENCE_THRESHOLD = 0.65   # CLIP softmax 최소 신뢰도
+        YOLO_CANDIDATE_THRESHOLD = 0.6   # YOLO 후보 박스 임계치
+        CLIP_CONFIDENCE_THRESHOLD = 0.6   # CLIP softmax 최소 신뢰도
         
         if self.yolo_model is None or self.clip_model is None:
             print("⚠️ YOLO 또는 CLIP 모델이 로드되지 않음")
@@ -767,7 +768,7 @@ class AIDetectionSystem:
         
         try:
             # 1. YOLO로 후보 박스 추출
-            results = self.yolo_model(frame, conf=YOLO_CANDIDATE_THRESHOLD, verbose=True)
+            results = self.yolo_model(frame, conf=YOLO_CANDIDATE_THRESHOLD, verbose=True, imgsz=960)
             
             if not results or len(results) == 0:
                 return detections
@@ -782,7 +783,7 @@ class AIDetectionSystem:
                 if len(boxes) == 0:
                     return detections
                 
-                print(f"📊 YOLO 후보 박스: {len(boxes)}개 탐지")
+                # print(f"📊 YOLO 후보 박스: {len(boxes)}개 탐지")
                 
                 # YOLO 클래스 이름 가져오기 (디버깅용)
                 class_names = yolo_result.names if hasattr(yolo_result, 'names') else {}
@@ -801,7 +802,8 @@ class AIDetectionSystem:
                 text_queries.append("other object")
                 other_object_idx = len(text_queries) - 1
                 
-                print(f"🎯 비교할 라벨: {[tl.display_name for tl in target_labels]} + 'other object'")
+                # print(f"등록된 객체 이름 : {[tl.display_name for tl in target_labels]}")
+                # print(f"🎯 비교할 라벨: {[tl.label_name for tl in target_labels]} + 'other object'")
                 
                 # 텍스트 토큰화
                 text_tokens = clip.tokenize(text_queries).to(self.device)
@@ -813,6 +815,8 @@ class AIDetectionSystem:
                 # 3. 각 타겟 라벨별로 탐지된 박스들을 수집
                 label_detections = {i: [] for i in range(len(target_labels))}
                 
+                # print(f"🔧 현재 CLIP_CONFIDENCE_THRESHOLD: {CLIP_CONFIDENCE_THRESHOLD}")
+
                 # 4. 각 박스에 대해 CLIP으로 분류
                 for box_idx, (box, yolo_conf, cls) in enumerate(zip(boxes, confidences, classes)):
                     x1, y1, x2, y2 = map(int, box)
@@ -842,22 +846,21 @@ class AIDetectionSystem:
                     best_idx = int(np.argmax(probs))
                     best_prob = float(probs[best_idx])
                     
-                    print(f"   Box{box_idx} [{yolo_class}]: ", end="")
-                    for i, (query, prob) in enumerate(zip(text_queries, probs)):
-                        if i < len(target_labels):
-                            print(f"{target_labels[i].display_name}={prob:.2f} ", end="")
-                        else:
-                            print(f"other={prob:.2f} ", end="")
-                    print()
+                    # print(f"   Box{box_idx} [{yolo_class}]: ", end="")
+                    # for i, (query, prob) in enumerate(zip(text_queries, probs)):
+                    #     if i < len(target_labels):
+                    #         print(f"{target_labels[i].display_name}={prob:.2f} ", end="")
+                    #     else:
+                    #         print(f"other={prob:.2f} ", end="")
                     
                     # "other object"가 최고점이면 무시
                     if best_idx == other_object_idx:
-                        print(f"      ❌ 'other object'로 분류됨 ({best_prob:.2f}) - 무시")
+                        # print(f"      ❌ 'other object'로 분류됨 ({best_prob:.2f}) - 무시")
                         continue
                     
                     # 신뢰도가 임계치 미만이면 무시
                     if best_prob < CLIP_CONFIDENCE_THRESHOLD:
-                        print(f"      ❌ 신뢰도 부족 ({best_prob:.2f} < {CLIP_CONFIDENCE_THRESHOLD})")
+                        # print(f"      ❌ 신뢰도 부족 ({best_prob:.2f} < {CLIP_CONFIDENCE_THRESHOLD})")
                         continue
                     
                     # 해당 라벨로 분류
@@ -890,10 +893,10 @@ class AIDetectionSystem:
                         
                         detections.append(detection)
                         
-                        print(f"\n🎯 {target_label.display_name} 최종 탐지:")
-                        print(f"   - 박스 수: {len(detected_boxes)}개")
-                        print(f"   - 평균 신뢰도: {avg_confidence:.1%}")
-                        print(f"   - 경고 설정: {'활성' if target_label.has_alert else '비활성'}")
+                        # print(f"\n🎯 {target_label.display_name} 최종 탐지:")
+                        # print(f"   - 박스 수: {len(detected_boxes)}개")
+                        # print(f"   - 평균 신뢰도: {avg_confidence:.1%}")
+                        # print(f"   - 경고 설정: {'활성' if target_label.has_alert else '비활성'}")
                 
                 if not detections:
                     print(f"💤 탐지된 유효 객체 없음 (모두 'other object'이거나 신뢰도 미달)")
@@ -1008,12 +1011,13 @@ class AIDetectionSystem:
         from .models import DetectionLog
         
         try:
-            print(f"\n📝 탐지 결과 처리:")
-            print(f"  - 카메라: {camera.name}")
-            print(f"  - 객체: {detection['label'].display_name}")
-            print(f"  - 개수: {detection['count']}")
-            print(f"  - 신뢰도: {detection['confidence']:.3f}")
-            print(f"  - 알림 여부: {'예' if detection['has_alert'] else '아니오'}")
+            if detection['has_alert']:
+                print(f"\n📝 탐지 결과 처리:")
+                print(f"  - 카메라: {camera.name}")
+                print(f"  - 객체: {detection['label'].display_name}")
+                print(f"  - 개수: {detection['count']}")
+                print(f"  - 신뢰도: {detection['confidence']:.3f}")
+                print(f"  - 알림 여부: {'예' if detection['has_alert'] else '아니오'}")
             
             # 스크린샷 저장 (has_alert인 경우 + 바운딩 박스 그리기)
             screenshot_path = None
