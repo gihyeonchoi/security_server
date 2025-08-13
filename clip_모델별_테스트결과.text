@@ -29,3 +29,12 @@ Preprocess time: 0.0041 sec
 Inference time: 0.2245 sec
 Logits per image: [[26.52 24.81 24.94]]
 Softmax probabilities: [[0.72   0.1311 0.1487]]
+
+
+
+   Box3 [tv]: 팔벌린사람=0.00 other=1.00 
+      ❌ 'other object'로 분류됨 (1.00) - 무시
+   Box4 [person]: 팔벌린사람=0.60 other=0.40 
+      ✅ '팔벌린사람'로 탐지! (신뢰도: 0.60)
+   Box5 [tv]: 팔벌린사람=0.00 other=1.00 
+      ❌ 'other object'로 분류됨 (1.00) - 무시
