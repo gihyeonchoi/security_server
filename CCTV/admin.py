@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Camera, TargetLabel
+from .models import Camera, TargetLabel, DetectionLog
 
 class TargetLabelInline(admin.StackedInline):
     model = TargetLabel
@@ -10,3 +10,5 @@ class TargetLabelInline(admin.StackedInline):
 class CameraAdmin(admin.ModelAdmin):
     """카메라 테이블 하나에서 LABEL 정보도 함께 등록"""
     inlines = [TargetLabelInline]
+
+admin.site.register(DetectionLog)
