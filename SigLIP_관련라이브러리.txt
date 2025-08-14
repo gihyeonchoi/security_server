@@ -1,0 +1,3 @@
+pip install sentencepiece protobuf transformers
+
+C:\Users\neibi\.cache\huggingface\hub

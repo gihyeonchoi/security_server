@@ -17,7 +17,7 @@ print(f"모델 이름 : {model_name}")
 load_time = time.time() - start_time
 print(f"Model load time: {load_time:.4f} sec")
 
-image_path = "clip_images/tmpeb_qopzg.PNG"  # YOLO로 자른 이미지 경로
+image_path = "clip_images/test_box.PNG"  # YOLO로 자른 이미지 경로
 image = Image.open(image_path)
 
 # 전처리 시간 측정
@@ -27,7 +27,7 @@ preprocess_time = time.time() - start_time
 print(f"Preprocess time: {preprocess_time:.4f} sec")
 
 # print(clip.available_models())
-texts = clip.tokenize(["a person", "other object"]).to(device)
+texts = clip.tokenize(["a person holding a box", "other object"]).to(device)
 
 # 추론 시간 측정
 start_time = time.time()
