@@ -538,10 +538,14 @@ class AIDetectionSystem:
         self.screenshot_dir = os.path.join(settings.MEDIA_ROOT, 'screenshots')
         self.load_models()
         self.ensure_screenshot_dir()
+        
         # 전역 큐 사용
         self.alert_queue = GLOBAL_ALERT_QUEUE
         # 한글 폰트 설정
         self.setup_korean_font()
+        # 전체 스크린샷 저장
+        self.all_detection_dir = os.path.join(settings.MEDIA_ROOT, 'all_detections')
+        self.ensure_all_detection_dir()
 
     def setup_korean_font(self):
         """한글 폰트 설정"""
@@ -571,6 +575,11 @@ class AIDetectionSystem:
         """스크린샷 저장 디렉토리 생성"""
         if not os.path.exists(self.screenshot_dir):
             os.makedirs(self.screenshot_dir, exist_ok=True)
+    
+    def ensure_all_detection_dir(self):
+        """모든 탐지 저장 디렉토리 생성"""
+        if not os.path.exists(self.all_detection_dir):
+            os.makedirs(self.all_detection_dir, exist_ok=True)
     
     def load_models(self):
         """YOLO11 및 CLIP 모델 로드 (디버그 추가)"""
@@ -730,6 +739,8 @@ class AIDetectionSystem:
                     print(f"✨ 탐지 완료! {len(detections)}개 타겟 발견 (시간: {current_time})")
                     for detection in detections:
                         self._process_detection(camera, frame, detection, target_labels)
+                        # 매 탐지마다 별도 스크린샷 저장
+                        self._save_all_detection_screenshot(camera, frame, detection)
                 else:
                     print(f"💤 탐지된 객체 없음 (시간: {current_time})")
                 
@@ -820,7 +831,23 @@ class AIDetectionSystem:
                 # 4. 각 박스에 대해 CLIP으로 분류
                 for box_idx, (box, yolo_conf, cls) in enumerate(zip(boxes, confidences, classes)):
                     x1, y1, x2, y2 = map(int, box)
-                    cropped_region = frame[y1:y2, x1:x2]
+                    
+                    # 박스 크기를 20% 확장
+                    box_scale_extend = 0.1
+
+                    box_width = x2 - x1
+                    box_height = y2 - y1
+                    expand_w = int(box_width * box_scale_extend)  # 양쪽으로 10%씩 = 총 20%
+                    expand_h = int(box_height * box_scale_extend)  # 위아래로 10%씩 = 총 20%
+                    
+                    # 프레임 경계 내에서 확장
+                    frame_h, frame_w = frame.shape[:2]
+                    x1_expanded = max(0, x1 - expand_w)
+                    y1_expanded = max(0, y1 - expand_h)
+                    x2_expanded = min(frame_w, x2 + expand_w)
+                    y2_expanded = min(frame_h, y2 + expand_h)
+                    
+                    cropped_region = frame[y1_expanded:y2_expanded, x1_expanded:x2_expanded]
                     
                     if cropped_region.size == 0:
                         continue
@@ -1189,6 +1216,48 @@ class AIDetectionSystem:
             
         except Exception as e:
             print(f"❌ 스크린샷 저장 오류: {e}")
+            return None
+    
+    def _save_all_detection_screenshot(self, camera, frame, detection):
+        """모든 탐지 결과에 대한 스크린샷 저장 (별도 폴더)"""
+        try:
+            # 날짜별 폴더 생성
+            today = datetime.now().strftime("%Y%m%d")
+            daily_dir = os.path.join(self.all_detection_dir, today)
+            if not os.path.exists(daily_dir):
+                os.makedirs(daily_dir, exist_ok=True)
+            
+            # 카메라별 폴더 생성
+            camera_dir = os.path.join(daily_dir, f"camera_{camera.id}")
+            if not os.path.exists(camera_dir):
+                os.makedirs(camera_dir, exist_ok=True)
+            
+            # 탐지된 객체별 폴더 생성
+            safe_object_name = detection['label'].display_name.replace(' ', '_')
+            if not safe_object_name.isascii():
+                safe_object_name = f"object_{detection['label'].id}"
+            
+            object_dir = os.path.join(camera_dir, safe_object_name)
+            if not os.path.exists(object_dir):
+                os.makedirs(object_dir, exist_ok=True)
+            
+            # 바운딩 박스가 그려진 프레임 생성
+            annotated_frame = self._draw_detection_boxes(frame, detection)
+            
+            # 파일명 생성 (시간 + 신뢰도)
+            timestamp = datetime.now().strftime("%H%M%S")
+            confidence = detection['confidence']
+            filename = f"{timestamp}_{confidence:.2f}.jpg"
+            filepath = os.path.join(object_dir, filename)
+            
+            # 스크린샷 저장
+            cv2.imwrite(filepath, annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            
+            print(f"    📁 모든탐지 저장: {today}/{camera.id}/{safe_object_name}/{filename}")
+            return filepath
+            
+        except Exception as e:
+            print(f"❌ 모든탐지 스크린샷 저장 오류: {e}")
             return None
     
     def _save_screenshot(self, camera, frame, detection):
