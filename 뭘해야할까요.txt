@@ -36,8 +36,7 @@ RFID :
 https://velog.io/@rcchun/%EB%94%A5%EB%9F%AC%EB%8B%9D-Florence-2
 이것도 테스트 해봐야...
 
-
-
+YOLOE 모델이 제일 나은거같기도?? 캠 혹은 RTSP IP캠으로 테스트 해봐야 할듯
 
 
 
