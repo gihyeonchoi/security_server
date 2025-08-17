@@ -1,0 +1,4 @@
+pip install sentencepiece protobuf transformers
+florence : pip install einops timm
+
+C:\Users\neibi\.cache\huggingface\hub
