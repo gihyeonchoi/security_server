@@ -26,4 +26,4 @@ with torch.no_grad():
 
 logits_per_image = outputs.logits_per_image
 probs = torch.sigmoid(logits_per_image) # 시그모이드 활성화 함수를 적용한 확률입니다
-print(f"{probs[0][0]:.1%} that image 0 is '{candidate_labels[0]}'")
+print(f"{probs[0][0]:.1%} that image 0 is '{candidate_labels[0]}'") 
