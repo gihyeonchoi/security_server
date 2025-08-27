@@ -599,7 +599,7 @@ class AIDetectionSystem:
                 matplotlib.use('Agg')
             
             # YOLO11 모델 로드
-            yolo_path = os.path.join(settings.BASE_DIR, 'CCTV', 'yolo11m.pt')
+            yolo_path = os.path.join(settings.BASE_DIR, 'CCTV', 'yolo11l.pt')
             print(f"  - YOLO 모델 경로: {yolo_path}")
             print(f"  - YOLO 모델 존재: {os.path.exists(yolo_path)}")
             

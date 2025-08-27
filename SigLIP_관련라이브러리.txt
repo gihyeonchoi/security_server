@@ -1,4 +1,5 @@
 pip install sentencepiece protobuf transformers
 florence : pip install einops timm
+groundied sam 2 : autodistill-grounded-sam-2 autodistill-yolov8
 
 C:\Users\neibi\.cache\huggingface\hub
