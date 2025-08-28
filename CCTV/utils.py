@@ -1046,17 +1046,21 @@ class AIDetectionSystem:
                 print(f"  - 신뢰도: {detection['confidence']:.3f}")
                 print(f"  - 알림 여부: {'예' if detection['has_alert'] else '아니오'}")
             
-            # 스크린샷 저장 (has_alert인 경우 + 바운딩 박스 그리기)
-            screenshot_path = None
+            # 통합된 스크린샷 저장 (모든 탐지에 대해 has_alert 구분하여 저장)
+            screenshot_path = self._save_all_detection_screenshot(camera, frame, detection)
+            
+            # has_alert인 경우 추가로 기존 스크린샷 폴더에도 저장 (호환성 유지)
             if detection['has_alert']:
-                # 프레임에 바운딩 박스 그리기
                 annotated_frame = self._draw_detection_boxes(frame, detection)
-                screenshot_path = self._save_screenshot_with_boxes(camera, annotated_frame, detection)
+                additional_screenshot = self._save_screenshot_with_boxes(camera, annotated_frame, detection)
                 
                 if screenshot_path:
-                    print(f"  - 📸 스크린샷 저장 (박스 포함): {screenshot_path}")
-                else:
-                    print(f"  - ⚠️ 스크린샷 저장 실패")
+                    print(f"  - 📸 통합 스크린샷 저장: {screenshot_path}")
+                if additional_screenshot:
+                    print(f"  - 📸 호환성 스크린샷 저장: {additional_screenshot}")
+                
+                # DB에는 기존 스크린샷 경로 저장 (호환성)
+                screenshot_path = additional_screenshot or screenshot_path
             
             # 탐지 로그 저장
             log = DetectionLog.objects.create(
@@ -1219,23 +1223,36 @@ class AIDetectionSystem:
             return None
     
     def _save_all_detection_screenshot(self, camera, frame, detection):
-        """모든 탐지 결과에 대한 스크린샷 저장 (별도 폴더)"""
+        """모든 탐지 결과에 대한 스크린샷 저장 (has_alert별로 구분하여 저장)"""
         try:
             # 날짜별 폴더 생성
             today = datetime.now().strftime("%Y%m%d")
-            daily_dir = os.path.join(self.all_detection_dir, today)
-            if not os.path.exists(daily_dir):
-                os.makedirs(daily_dir, exist_ok=True)
             
-            # 카메라별 폴더 생성
-            camera_dir = os.path.join(daily_dir, f"camera_{camera.id}")
+            # has_alert에 따라 상위 폴더 구분
+            if detection['has_alert']:
+                base_dir = os.path.join(self.all_detection_dir, "alerts", today)
+                folder_type = "경고탐지"
+            else:
+                base_dir = os.path.join(self.all_detection_dir, "normal", today)
+                folder_type = "일반탐지"
+            
+            if not os.path.exists(base_dir):
+                os.makedirs(base_dir, exist_ok=True)
+            
+            # 카메라별 폴더 생성 (이름과 위치 포함)
+            camera_name_safe = camera.name.replace(' ', '_')
+            camera_location_safe = camera.location.replace(' ', '_') if camera.location else "알수없는위치"
+            camera_dir = os.path.join(base_dir, f"{camera_name_safe}_{camera_location_safe}")
             if not os.path.exists(camera_dir):
                 os.makedirs(camera_dir, exist_ok=True)
             
             # 탐지된 객체별 폴더 생성
-            safe_object_name = detection['label'].display_name.replace(' ', '_')
+            display_name = detection['label'].display_name or detection['label'].label_name
+            safe_object_name = display_name.replace(' ', '_')
+            
+            # 한글이 포함된 경우 영문 설명 추가
             if not safe_object_name.isascii():
-                safe_object_name = f"object_{detection['label'].id}"
+                safe_object_name = f"{safe_object_name}_object{detection['label'].id}"
             
             object_dir = os.path.join(camera_dir, safe_object_name)
             if not os.path.exists(object_dir):
@@ -1244,20 +1261,22 @@ class AIDetectionSystem:
             # 바운딩 박스가 그려진 프레임 생성
             annotated_frame = self._draw_detection_boxes(frame, detection)
             
-            # 파일명 생성 (시간 + 신뢰도)
-            timestamp = datetime.now().strftime("%H%M%S")
+            # 파일명 생성 (시간 + 개수 + 신뢰도)
+            now = datetime.now()
+            timestamp = now.strftime("%H시%M분%S초")
             confidence = detection['confidence']
-            filename = f"{timestamp}_{confidence:.2f}.jpg"
+            count = detection['count']
+            filename = f"{timestamp}_{count}개_신뢰도{confidence:.2f}.jpg"
             filepath = os.path.join(object_dir, filename)
             
             # 스크린샷 저장
             cv2.imwrite(filepath, annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
             
-            print(f"    📁 모든탐지 저장: {today}/{camera.id}/{safe_object_name}/{filename}")
+            print(f"    📁 {folder_type} 저장: {today}/{camera_name_safe}_{camera_location_safe}/{safe_object_name}/{filename}")
             return filepath
             
         except Exception as e:
-            print(f"❌ 모든탐지 스크린샷 저장 오류: {e}")
+            print(f"❌ 탐지 스크린샷 저장 오류: {e}")
             return None
     
     def _save_screenshot(self, camera, frame, detection):
