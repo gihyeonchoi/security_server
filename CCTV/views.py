@@ -153,12 +153,20 @@ def target_label_create(request, camera_id):
             )
             messages.success(request, f'타겟 라벨 "{target_label.display_name}"이 성공적으로 추가되었습니다.')
             
-            # 타겟 라벨 추가 후 AI 탐지 시스템 업데이트
+            # 타겟 라벨 추가 후 AI 탐지 시스템 업데이트 (비동기)
             try:
-                ai_detection_system.refresh_cameras()
-                print(f"✅ 타겟 라벨 '{target_label.display_name}' 추가 후 AI 탐지 업데이트 완료")
+                import threading
+                def update_detection():
+                    try:
+                        ai_detection_system.refresh_cameras()
+                        print(f"✅ 타겟 라벨 '{target_label.display_name}' 추가 후 AI 탐지 업데이트 완료")
+                    except Exception as e:
+                        print(f"⚠️ 타겟 라벨 추가 후 AI 탐지 업데이트 오류: {e}")
+                
+                update_thread = threading.Thread(target=update_detection, daemon=True)
+                update_thread.start()
             except Exception as e:
-                print(f"⚠️ 타겟 라벨 추가 후 AI 탐지 업데이트 오류: {e}")
+                print(f"⚠️ 비동기 탐지 업데이트 시작 오류: {e}")
             
             return redirect('cctv:index')
         else:
@@ -182,12 +190,20 @@ def target_label_edit(request, label_id):
         
         messages.success(request, f'타겟 라벨 "{target_label.display_name}"이 성공적으로 수정되었습니다.')
         
-        # 타겟 라벨 수정 후 AI 탐지 시스템 업데이트
+        # 타겟 라벨 수정 후 AI 탐지 시스템 업데이트 (비동기)
         try:
-            ai_detection_system.refresh_cameras()
-            print(f"✅ 타겟 라벨 '{target_label.display_name}' 수정 후 AI 탐지 업데이트 완료")
+            import threading
+            def update_detection():
+                try:
+                    ai_detection_system.refresh_cameras()
+                    print(f"✅ 타겟 라벨 '{target_label.display_name}' 수정 후 AI 탐지 업데이트 완료")
+                except Exception as e:
+                    print(f"⚠️ 타겟 라벨 수정 후 AI 탐지 업데이트 오류: {e}")
+            
+            update_thread = threading.Thread(target=update_detection, daemon=True)
+            update_thread.start()
         except Exception as e:
-            print(f"⚠️ 타겟 라벨 수정 후 AI 탐지 업데이트 오류: {e}")
+            print(f"⚠️ 비동기 탐지 업데이트 시작 오류: {e}")
         
         return redirect('cctv:index')
     
@@ -207,12 +223,20 @@ def target_label_delete(request, label_id):
         target_label.delete()
         messages.success(request, f'타겟 라벨 "{display_name}"이 성공적으로 삭제되었습니다.')
         
-        # 타겟 라벨 삭제 후 AI 탐지 시스템 업데이트
+        # 타겟 라벨 삭제 후 AI 탐지 시스템 업데이트 (비동기)
         try:
-            ai_detection_system.refresh_cameras()
-            print(f"✅ 타겟 라벨 '{display_name}' 삭제 후 AI 탐지 업데이트 완료")
+            import threading
+            def update_detection():
+                try:
+                    ai_detection_system.refresh_cameras()
+                    print(f"✅ 타겟 라벨 '{display_name}' 삭제 후 AI 탐지 업데이트 완료")
+                except Exception as e:
+                    print(f"⚠️ 타겟 라벨 삭제 후 AI 탐지 업데이트 오류: {e}")
+            
+            update_thread = threading.Thread(target=update_detection, daemon=True)
+            update_thread.start()
         except Exception as e:
-            print(f"⚠️ 타겟 라벨 삭제 후 AI 탐지 업데이트 오류: {e}")
+            print(f"⚠️ 비동기 탐지 업데이트 시작 오류: {e}")
         
         return redirect('cctv:index')
     

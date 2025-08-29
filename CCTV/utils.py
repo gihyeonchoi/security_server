@@ -30,36 +30,46 @@ class CameraStreamer:
         self.background_streaming = {}  # 백그라운드 스트리밍 상태 추적
     
     def refresh_cameras(self):
-        """카메라 목록 변경 감지 후 스트리밍을 실시간 업데이트"""
-        from .models import Camera
-        
-        print("🔄 스트리밍 시스템 카메라 목록 업데이트")
-        
-        # 현재 DB의 카메라 목록 가져오기
-        current_cameras = Camera.objects.all()
-        current_rtsp_urls = set(camera.rtsp_url for camera in current_cameras)
-        
-        # 현재 활성화된 백그라운드 스트리밍 목록
-        active_background = set(self.background_streaming.keys())
-        
-        # 1. 삭제된 카메라들의 스트리밍 중지
-        removed_urls = active_background - current_rtsp_urls
-        for rtsp_url in removed_urls:
-            print(f"⏹️ 삭제된 카메라 스트리밍 중지: {rtsp_url}")
-            self.stop_background_streaming(rtsp_url)
-            self.cleanup_camera(rtsp_url)
-        
-        # 2. 새로 추가된 카메라들의 스트리밍 시작
-        new_urls = current_rtsp_urls - active_background
-        for camera in current_cameras:
-            if camera.rtsp_url in new_urls:
-                print(f"🚀 새 카메라 백그라운드 스트리밍 시작: {camera.name}")
+        """카메라 목록 변경 감지 후 스트리밍을 실시간 업데이트 (안전한 버전)"""
+        try:
+            from .models import Camera
+            
+            print("🔄 스트리밍 시스템 카메라 목록 업데이트")
+            
+            # 현재 DB의 카메라 목록 가져오기
+            current_cameras = Camera.objects.all()
+            current_rtsp_urls = set(camera.rtsp_url for camera in current_cameras)
+            
+            # 현재 활성화된 백그라운드 스트리밍 목록
+            active_background = set(self.background_streaming.keys()) if self.background_streaming else set()
+            
+            # 1. 삭제된 카메라들의 스트리밍 중지 (안전하게)
+            removed_urls = active_background - current_rtsp_urls
+            for rtsp_url in removed_urls:
                 try:
-                    self.start_background_streaming(camera.rtsp_url)
+                    print(f"⏹️ 삭제된 카메라 스트리밍 중지: {rtsp_url}")
+                    self.stop_background_streaming(rtsp_url)
+                    # 직접 정리하지 말고 다음 사이클에서 자동 정리되도록 남겨둡시
+                    # self.cleanup_camera(rtsp_url)  # 이 라인을 주석 처리
                 except Exception as e:
-                    print(f"❌ 백그라운드 스트리밍 시작 실패: {e}")
-        
-        print("✅ 스트리밍 시스템 업데이트 완료")
+                    print(f"⚠️ 카메라 스트리밍 중지 오류: {e}")
+            
+            # 2. 새로 추가된 카메라들의 스트리밍 시작
+            new_urls = current_rtsp_urls - active_background
+            for camera in current_cameras:
+                if camera.rtsp_url in new_urls:
+                    try:
+                        print(f"🚀 새 카메라 백그라운드 스트리밍 시작: {camera.name}")
+                        self.start_background_streaming(camera.rtsp_url)
+                    except Exception as e:
+                        print(f"❌ 백그라운드 스트리밍 시작 실패: {e}")
+            
+            print("✅ 스트리밍 시스템 업데이트 완료")
+            
+        except Exception as e:
+            print(f"❌ 스트리밍 시스템 업데이트 중 오류: {e}")
+            import traceback
+            traceback.print_exc()
     
     def get_camera_stream(self, rtsp_url):
         # print(f"🔐 global_lock 획득 시도: {rtsp_url}")
@@ -129,28 +139,36 @@ class CameraStreamer:
                         camera_info['cap'].release()
                         time.sleep(0.1)
                     
-                    # GStreamer 백엔드 사용 (Linux/Windows with GStreamer)
-                    # 또는 FFMPEG 백엔드 사용
-                    backend = cv2.CAP_FFMPEG  # 또는 cv2.CAP_GSTREAMER
+                    # FFmpeg 백엔드 사용 (안정성 향상)
+                    backend = cv2.CAP_FFMPEG
                     
-                    # RTSP URL에 파라미터 추가 (낮은 지연시간)
-                    # TCP 사용으로 패킷 손실 방지
-                    rtsp_url_low_latency = rtsp_url
+                    # RTSP URL에 파라미터 추가 (낮은 지연시간 및 안정성)
+                    rtsp_url_optimized = rtsp_url
                     if '?' not in rtsp_url:
-                        rtsp_url_low_latency = f"{rtsp_url}?tcp"
+                        # TCP 사용 + 추가 안정성 옵션
+                        rtsp_url_optimized = f"{rtsp_url}?tcp&timeout=5000000&stimeout=5000000"
                     
-                    cap = cv2.VideoCapture(rtsp_url_low_latency, backend)
+                    print(f"🔗 RTSP 연결 시도: {rtsp_url_optimized}")
+                    cap = cv2.VideoCapture(rtsp_url_optimized, backend)
                     
-                    # 버퍼 크기를 1로 설정 (최소 버퍼)
+                    # 버퍼 크기 최소화 (멀티 스트림 안정성 향상)
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                     
-                    # 추가 최적화 설정
-                    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'H264'))
-                    cap.set(cv2.CAP_PROP_FPS, 25)
-                    
-                    # FFMPEG 옵션 설정 - 타임아웃 단축
-                    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 2000)
-                    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 2000)
+                    # FFmpeg 안정성 옵션
+                    try:
+                        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'H264'))
+                        cap.set(cv2.CAP_PROP_FPS, 25)
+                        
+                        # 타임아웃 설정 (짧게 설정하여 빠른 실패 감지)
+                        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 3000)
+                        cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 3000)
+                        
+                        # FFmpeg 스레드 안정성 옵션
+                        if hasattr(cv2, 'CAP_PROP_FRAME_MSEC'):
+                            cap.set(cv2.CAP_PROP_FRAME_MSEC, 40)  # 25 FPS = 40ms
+                            
+                    except Exception as prop_error:
+                        print(f"⚠️ 카메라 속성 설정 오류: {prop_error}")
                     
                     if cap.isOpened():
                         # 버퍼 비우기 - 최신 프레임까지 스킵
@@ -180,15 +198,28 @@ class CameraStreamer:
                             camera_info['is_connected'] = True
                             camera_info['reconnect_attempts'] = 0
                             
-                            # 프레임 읽기 스레드 시작
+                            print(f"✅ 카메라 연결 성공: {rtsp_url}")
+                            
+                            # 기존 스레드가 살아있는지 안전하게 확인
+                            old_thread = self.reader_threads.get(rtsp_url)
+                            if old_thread and old_thread.is_alive():
+                                print(f"⚠️ 기존 스레드 종료 대기: {rtsp_url}")
+                                try:
+                                    old_thread.join(timeout=1.0)
+                                except:
+                                    pass
+                            
+                            # 새 프레임 읽기 스레드 시작
                             if rtsp_url not in self.reader_threads or not self.reader_threads[rtsp_url].is_alive():
                                 reader_thread = threading.Thread(
-                                    target=self._frame_reader_thread_optimized,  # 최적화된 버전 사용
+                                    target=self._frame_reader_thread_optimized,
                                     args=(rtsp_url,),
-                                    daemon=True
+                                    daemon=True,
+                                    name=f"FrameReader-{rtsp_url.split('/')[-1][:10]}"
                                 )
                                 self.reader_threads[rtsp_url] = reader_thread
                                 reader_thread.start()
+                                print(f"🚀 프레임 리더 스레드 시작: {reader_thread.name}")
                             
                             return True
                         else:
@@ -210,102 +241,183 @@ class CameraStreamer:
             return camera_info['is_connected']
     
     def _frame_reader_thread_optimized(self, rtsp_url):
-        """프레임 읽기 스레드 - 큐 관리 개선"""
+        """프레임 읽기 스레드 - FFmpeg 안정성 강화 버전"""
+        thread_name = threading.current_thread().name
+        print(f"📺 프레임 리더 시작: {thread_name} ({rtsp_url})")
+        
         camera_info = self.cameras.get(rtsp_url)
         frame_queue = self.frame_queues.get(rtsp_url)
         
         if not camera_info or not frame_queue:
+            print(f"❌ 카메라 정보 또는 큐가 없음: {rtsp_url}")
             return
         
         consecutive_failures = 0
         last_frame_time = time.time()
         frame_skip_counter = 0
+        last_error_log = 0  # 오류 로그 빈도 제한
+        current_time = time.time()  # 변수 초기화 추가
         
-        while True:
-            with camera_info['lock']:
-                cap = camera_info['cap']
-                if not cap or not camera_info['is_connected']:
-                    break
-                stream_count = camera_info['stream_count']
+        try:
+            while True:
+                # 카메라 상태 확인 (안전하게)
+                try:
+                    with camera_info['lock']:
+                        cap = camera_info['cap']
+                        if not cap or not camera_info['is_connected']:
+                            print(f"🛑 카메라 연결 종료: {thread_name}")
+                            break
+                        stream_count = camera_info['stream_count']
+                except Exception as lock_error:
+                    print(f"⚠️ 락 오류: {lock_error}")
+                    time.sleep(1.0)
+                    continue
+                
+                # 아무도 보고 있지 않으면 프레임 읽기 중단
+                is_background = self.background_streaming.get(rtsp_url, False)
+                if stream_count <= 0 and not is_background:
+                    # 큐 비우기
+                    while not frame_queue.empty():
+                        try:
+                            frame_queue.get_nowait()
+                        except:
+                            break
+                    time.sleep(0.5)
+                    continue
+                
+                try:
+                    current_time = time.time()
+                    
+                    # FFmpeg 안전성을 위한 카메라 상태 재확인
+                    with camera_info['lock']:
+                        if not camera_info['is_connected'] or not camera_info['cap']:
+                            break
+                        cap_ref = camera_info['cap']  # 레퍼런스 복사로 안정성 향상
+                    
+                    # 프레임 읽기 (비동기적 grab)
+                    try:
+                        ret = cap_ref.grab()
+                    except Exception as grab_error:
+                        if current_time - last_error_log > 5.0:  # 5초마다 로그
+                            print(f"⚠️ 프레임 grab 오류: {grab_error}")
+                            last_error_log = current_time
+                        ret = False
+                    
+                    if ret:
+                        # 최신 프레임만 유지 (큐 크기 체크)
+                        if frame_queue.qsize() >= 3:
+                            # 큐가 3개 이상이면 하나 빼고 새로 넣기
+                            try:
+                                old_frame = frame_queue.get_nowait()
+                                if isinstance(old_frame, dict):
+                                    # 로그 줄이기 (10번에 1번만)
+                                    if frame_skip_counter % 10 == 0:
+                                        print(f"🔄 큐 정리 중 (크기: {frame_queue.qsize()})")
+                            except queue.Empty:
+                                pass
+                        
+                        # 프레임 retrieve (안전하게)
+                        try:
+                            ret, frame = cap_ref.retrieve()
+                        except Exception as retrieve_error:
+                            if current_time - last_error_log > 5.0:
+                                print(f"⚠️ 프레임 retrieve 오류: {retrieve_error}")
+                                last_error_log = current_time
+                            ret, frame = False, None
+                        
+                        if ret and frame is not None and frame.size > 0:
+                            consecutive_failures = 0
+                            frame_skip_counter += 1
+                            last_frame_time = current_time
+                            
+                            # 타임스탬프 추가
+                            timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                            
+                            # 화면에 타임스탬프 표시 (디버깅용, 필요시 주석 처리)
+                            # cv2.putText(frame, timestamp_str, (10, 30), 
+                            #            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                            
+                            frame_data = {
+                                'frame': frame,
+                                'timestamp': current_time,
+                                'timestamp_str': timestamp_str
+                            }
+                            
+                            # 새 프레임 추가
+                            try:
+                                frame_queue.put_nowait(frame_data)
+                            except queue.Full:
+                                # 큐가 가득 차면 가장 오래된 것 제거 후 추가
+                                try:
+                                    frame_queue.get_nowait()
+                                    frame_queue.put_nowait(frame_data)
+                                except:
+                                    pass
+                            
+                            # FPS 계산
+                            with camera_info['lock']:
+                                camera_info['fps_counter'] += 1
+                                if current_time - camera_info['last_fps_time'] >= 1.0:
+                                    camera_info['avg_fps'] = camera_info['fps_counter']
+                                    camera_info['fps_counter'] = 0
+                                    camera_info['last_fps_time'] = current_time
+                        else:
+                            # 프레임 retrieve 실패 시 연속 실패 카운터 증가
+                            consecutive_failures += 1
+                    else:
+                        # grab 실패 시 연속 실패 카운터 증가
+                        consecutive_failures += 1
+                    
+                    # 연속 실패 체크
+                    if consecutive_failures > 15:  # 연속 실패 허용 횟수 초과
+                        print(f"⏹️ 연속 실패 초과 - 스레드 종료: {thread_name}")
+                        break
+                    
+                    # CPU 사용량 제어 및 FFmpeg 안정성
+                    time.sleep(0.02)  # 50 FPS 제한
+                    
+                except Exception as thread_error:
+                    if current_time - last_error_log > 10.0:  # 10초마다 오류 로그
+                        print(f"❌ 프레임 리더 오류 ({thread_name}): {thread_error}")
+                        last_error_log = current_time
+                        import traceback
+                        traceback.print_exc()
+                    
+                    consecutive_failures += 1
+                    if consecutive_failures > 15:  # 연속 실패 허용 횟수 초과
+                        print(f"⏹️ 연속 실패 초과 - 스레드 종료: {thread_name}")
+                        break
+                    
+                    # 오류 후 짧은 대기
+                    time.sleep(0.5)
+                    
+        except Exception as critical_error:
+            print(f"❌ 프레임 리더 스레드 치명적 오류: {critical_error}")
+            import traceback
+            traceback.print_exc()
             
-            # 아무도 보고 있지 않으면 프레임 읽기 중단
-            is_background = self.background_streaming.get(rtsp_url, False)
-            if stream_count <= 0 and not is_background:
-                # 큐 비우기
+        finally:
+            print(f"📺 프레임 리더 종료: {thread_name} ({rtsp_url})")
+            # 스레드 종료 시 정리
+            try:
+                # 카메라 연결 상태 업데이트
+                if camera_info:
+                    with camera_info['lock']:
+                        camera_info['is_connected'] = False
+                
+                # 스레드 딕셔너리에서 제거
+                if rtsp_url in self.reader_threads:
+                    del self.reader_threads[rtsp_url]
+                    
+                # 남은 프레임 큐 정리
                 while not frame_queue.empty():
                     try:
                         frame_queue.get_nowait()
                     except:
                         break
-                time.sleep(0.5)
-                continue
-            
-            try:
-                current_time = time.time()
-                
-                # 프레임 읽기
-                ret = cap.grab()
-                
-                if ret:
-                    # 최신 프레임만 유지 (큐 크기 체크)
-                    if frame_queue.qsize() >= 3:
-                        # 큐가 3개 이상이면 하나 빼고 새로 넣기
-                        try:
-                            old_frame = frame_queue.get_nowait()
-                            if isinstance(old_frame, dict):
-                                # 로그 줄이기 (10번에 1번만)
-                                if frame_skip_counter % 10 == 0:
-                                    print(f"🔄 큐 정리 중 (크기: {frame_queue.qsize()})")
-                        except queue.Empty:
-                            pass
-                    
-                    ret, frame = cap.retrieve()
-                    
-                    if ret and frame is not None:
-                        consecutive_failures = 0
-                        frame_skip_counter += 1
-                        last_frame_time = current_time
                         
-                        # 타임스탬프 추가 (선택적)
-                        timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-                        
-                        # 화면에 타임스탬프 표시 (디버깅용, 필요시 주석 처리)
-                        # cv2.putText(frame, timestamp_str, (10, 30), 
-                        #            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                        
-                        frame_data = {
-                            'frame': frame,
-                            'timestamp': current_time,
-                            'timestamp_str': timestamp_str
-                        }
-                        
-                        # 새 프레임 추가
-                        try:
-                            frame_queue.put_nowait(frame_data)
-                        except queue.Full:
-                            # 큐가 가득 차면 가장 오래된 것 제거 후 추가
-                            try:
-                                frame_queue.get_nowait()
-                                frame_queue.put_nowait(frame_data)
-                            except:
-                                pass
-                        
-                        # FPS 계산
-                        with camera_info['lock']:
-                            camera_info['fps_counter'] += 1
-                            if current_time - camera_info['last_fps_time'] >= 1.0:
-                                camera_info['avg_fps'] = camera_info['fps_counter']
-                                camera_info['fps_counter'] = 0
-                                camera_info['last_fps_time'] = current_time
-                
-                # 적절한 대기 시간
-                # time.sleep(0.04)  # 25 FPS
-                
-            except Exception as e:
-                print(f"Frame reading error: {e}")
-                consecutive_failures += 1
-                if consecutive_failures > 10:
-                    break
+            except Exception as cleanup_error:
+                print(f"⚠️ 정리 중 오류: {cleanup_error}")
 
     def flush_camera_buffer(self, rtsp_url):
         """수동으로 카메라 버퍼 비우기. 자동으로 사용하지는 않음"""
@@ -336,13 +448,27 @@ class CameraStreamer:
             return True
         
     def generate_frames(self, rtsp_url):
-        """영상 스트리밍 - dict 형식 프레임 처리"""
+        """영상 스트리밍 - FFmpeg 안정성 강화 버전"""
+        stream_id = f"stream_{id(threading.current_thread())}"
+        print(f"📹 스트리밍 시작: {stream_id} ({rtsp_url})")
+        
         try:
             camera_info = self.get_camera_stream(rtsp_url)
             frame_queue = self.frame_queues.get(rtsp_url)
             
-            with camera_info['lock']:
-                camera_info['stream_count'] += 1
+            if not camera_info or not frame_queue:
+                print(f"❌ 카메라 정보 또는 큐가 없음: {rtsp_url}")
+                return
+            
+            # 스트림 카운터 증가 (안전하게)
+            try:
+                with camera_info['lock']:
+                    camera_info['stream_count'] += 1
+                    current_streams = camera_info['stream_count']
+                print(f"📊 스트림 카운터 증가: {current_streams}개 ({stream_id})")
+            except Exception as lock_error:
+                print(f"⚠️ 스트림 카운터 증가 오류: {lock_error}")
+                return
                 
         except Exception as e:
             print(f"❌ generate_frames 초기화 오류: {e}")
@@ -351,20 +477,47 @@ class CameraStreamer:
         last_frame = None
         error_count = 0
         
+        # 스트리밍 메인 루프
+        error_count = 0
+        max_errors = 10
+        last_error_time = 0
+        
         try:
             while True:
-                connection_result = self.connect_camera(rtsp_url)
-                
-                if not connection_result:
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + 
-                           self.get_error_frame("Camera Disconnected") + b'\r\n')
-                    time.sleep(2)
+                try:
+                    # 카메라 연결 상태 확인
+                    connection_result = self.connect_camera(rtsp_url)
+                    
+                    if not connection_result:
+                        error_count += 1
+                        if error_count > max_errors:
+                            print(f"❌ 연결 실패 초과 - 스트리밍 종료: {stream_id}")
+                            break
+                            
+                        yield (b'--frame\r\n'
+                               b'Content-Type: image/jpeg\r\n\r\n' + 
+                               self.get_error_frame("Camera Disconnected") + b'\r\n')
+                        time.sleep(2)
+                        continue
+                    
+                    # 연결 성공 시 오류 카운터 리셋
+                    error_count = 0
+                    
+                except Exception as connect_error:
+                    current_time = time.time()
+                    if current_time - last_error_time > 5.0:
+                        print(f"⚠️ 연결 시도 오류: {connect_error}")
+                        last_error_time = current_time
+                    time.sleep(1)
                     continue
                 
                 try:
-                    # 큐에서 프레임 가져오기
-                    frame_data = frame_queue.get(timeout=0.5)
+                    # 큐에서 프레임 가져오기 (비동기 타임아웃)
+                    try:
+                        frame_data = frame_queue.get(timeout=1.0)  # 타임아웃 증가
+                    except queue.Empty:
+                        # 큐가 비어있는 경우 처리
+                        continue
                     
                     # dict 형식인지 확인하고 프레임 추출
                     if isinstance(frame_data, dict):
@@ -383,18 +536,19 @@ class CameraStreamer:
                     last_frame = frame
                     error_count = 0
                     
-                except queue.Empty:
-                    error_count += 1
-                    if error_count > 10:
-                        with camera_info['lock']:
-                            camera_info['is_connected'] = False
+                except Exception as frame_error:
+                    current_time = time.time()
+                    if current_time - last_error_time > 3.0:
+                        print(f"⚠️ 프레임 가져오기 오류: {frame_error}")
+                        last_error_time = current_time
+                    
+                    # 마지막 프레임 사용 또는 오류 프레임 전송
+                    if last_frame is not None:
+                        frame = last_frame
+                    else:
                         yield (b'--frame\r\n'
                                b'Content-Type: image/jpeg\r\n\r\n' + 
                                self.get_error_frame("No Signal") + b'\r\n')
-                        continue
-                    elif last_frame is not None:
-                        frame = last_frame
-                    else:
                         continue
                 
                 # JPEG 인코딩
@@ -407,26 +561,50 @@ class CameraStreamer:
                        b'Content-Length: ' + f'{len(frame_bytes)}'.encode() + b'\r\n\r\n' + 
                        frame_bytes + b'\r\n')
                 
-                # time.sleep(0.04)  # 25 FPS
+                # FPS 제어 (무너 빠른 전송 방지)
+                time.sleep(0.033)  # 30 FPS 제한
                 
         except GeneratorExit:
             pass
+        except Exception as stream_error:
+            print(f"❌ 스트리밍 오류: {stream_error}")
+            import traceback
+            traceback.print_exc()
+            
         finally:
-            with camera_info['lock']:
-                camera_info['stream_count'] -= 1
-                is_background = self.background_streaming.get(rtsp_url, False)
-                if camera_info['stream_count'] <= 0 and not is_background:
-                    if camera_info['cap']:
-                        camera_info['cap'].release()
-                        camera_info['cap'] = None
-                    camera_info['is_connected'] = False
+            print(f"📹 스트리밍 종료: {stream_id} ({rtsp_url})")
+            
+            # 스트림 카운터 감소 (안전하게)
+            try:
+                with camera_info['lock']:
+                    camera_info['stream_count'] -= 1
+                    remaining_streams = camera_info['stream_count']
+                    is_background = self.background_streaming.get(rtsp_url, False)
                     
-                    # 프레임 큐 비우기
-                    try:
-                        while not frame_queue.empty():
-                            frame_queue.get_nowait()
-                    except:
-                        pass
+                    print(f"📊 스트림 카운터 감소: {remaining_streams}개 남음")
+                    
+                    # 모든 스트림이 종료되고 백그라운드가 아닌 경우 리소스 정리
+                    if remaining_streams <= 0 and not is_background:
+                        print(f"🧹 카메라 리소스 자동 정리: {rtsp_url}")
+                        
+                        # 카메라 연결 해제
+                        if camera_info['cap']:
+                            try:
+                                camera_info['cap'].release()
+                            except:
+                                pass
+                            camera_info['cap'] = None
+                        camera_info['is_connected'] = False
+                        
+                        # 프레임 큐 비우기
+                        try:
+                            while not frame_queue.empty():
+                                frame_queue.get_nowait()
+                        except:
+                            pass
+                            
+            except Exception as cleanup_error:
+                print(f"⚠️ 스트리밍 정리 오류: {cleanup_error}")
     
     def get_error_frame(self, message="Camera Error"):
         """에러 메시지가 포함된 프레임 생성"""
@@ -469,28 +647,71 @@ class CameraStreamer:
             }
     
     def cleanup_camera(self, rtsp_url):
-        """카메라 리소스 정리"""
-        with self.global_lock:
-            if rtsp_url in self.cameras:
-                camera_info = self.cameras[rtsp_url]
-                with camera_info['lock']:
-                    if camera_info['cap']:
-                        camera_info['cap'].release()
-                        camera_info['cap'] = None
-                    camera_info['is_connected'] = False
+        """카메라 리소스 정리 (안전한 버전)"""
+        print(f"🧹 카메라 리소스 정리 시작: {rtsp_url}")
+        
+        try:
+            # 락 획득 시도 (타임아웃 설정)
+            if not self.global_lock.acquire(timeout=3.0):
+                print(f"⚠️ 카메라 정리 락 타임아웃: {rtsp_url}")
+                return False
+            
+            try:
+                if rtsp_url in self.cameras:
+                    camera_info = self.cameras[rtsp_url]
+                    
+                    # 카메라 연결 해제 (안전하게)
+                    try:
+                        with camera_info['lock']:
+                            if camera_info['cap']:
+                                camera_info['cap'].release()
+                                camera_info['cap'] = None
+                            camera_info['is_connected'] = False
+                    except Exception as e:
+                        print(f"⚠️ 카메라 연결 해제 오류: {e}")
+                    
+                    # 스레드 종료 (비동기적으로)
+                    if rtsp_url in self.reader_threads:
+                        thread = self.reader_threads[rtsp_url]
+                        if thread.is_alive():
+                            print(f"🔄 스레드 종료 대기: {rtsp_url}")
+                            try:
+                                thread.join(timeout=1.0)  # 짧은 타임아웃
+                                if thread.is_alive():
+                                    print(f"⚠️ 스레드 강제 종료: {rtsp_url}")
+                            except Exception as e:
+                                print(f"⚠️ 스레드 종료 오류: {e}")
+                        del self.reader_threads[rtsp_url]
+                    
+                    # 큐 정리
+                    if rtsp_url in self.frame_queues:
+                        try:
+                            # 큐에 남은 데이터 비우기
+                            while not self.frame_queues[rtsp_url].empty():
+                                try:
+                                    self.frame_queues[rtsp_url].get_nowait()
+                                except:
+                                    break
+                            del self.frame_queues[rtsp_url]
+                        except Exception as e:
+                            print(f"⚠️ 플레임 큐 정리 오류: {e}")
+                    
+                    # 카메라 정보 삭제
+                    del self.cameras[rtsp_url]
+                    print(f"✅ 카메라 리소스 정리 완료: {rtsp_url}")
+                    return True
+                else:
+                    print(f"⚠️ 카메라 정보 없음: {rtsp_url}")
+                    return False
+                    
+            finally:
+                self.global_lock.release()
                 
-                # 스레드 종료 대기
-                if rtsp_url in self.reader_threads:
-                    thread = self.reader_threads[rtsp_url]
-                    if thread.is_alive():
-                        thread.join(timeout=2.0)
-                    del self.reader_threads[rtsp_url]
-                
-                # 큐 정리
-                if rtsp_url in self.frame_queues:
-                    del self.frame_queues[rtsp_url]
-                
-                del self.cameras[rtsp_url]
+        except Exception as e:
+            print(f"❌ 카메라 정리 중 치명적 오류: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     def start_background_streaming(self, rtsp_url):
         """백그라운드 연속 스트리밍 시작"""
@@ -1392,58 +1613,59 @@ class AIDetectionSystem:
         print(f"🤖 총 {started_count}개 카메라에서 AI 탐지 시작됨")
     
     def refresh_cameras(self):
-        """카메라 목록 변경 감지 후 스트리밍과 탐지를 실시간 업데이트"""
-        from .models import Camera
-        
-        print("🔄 카메라 목록 변경 감지 - 실시간 업데이트 시작")
-        
-        # 현재 DB의 카메라 목록 가져오기
-        current_cameras = Camera.objects.prefetch_related('target_labels').all()
-        current_rtsp_urls = set(camera.rtsp_url for camera in current_cameras)
-        
-        # 현재 활성화된 백그라운드 스트리밍 목록
-        active_background = set(self.background_streaming.keys())
-        
-        # 현재 활성화된 AI 탐지 목록 (카메라 ID 기준)
-        active_detections = set(self.detection_active.keys())
-        current_camera_ids = set(camera.id for camera in current_cameras)
-        
-        # 1. 삭제된 카메라들의 스트리밍과 탐지 중지
-        removed_urls = active_background - current_rtsp_urls
-        for rtsp_url in removed_urls:
-            print(f"⏹️ 삭제된 카메라 스트리밍 중지: {rtsp_url}")
-            self.stop_background_streaming(rtsp_url)
-            self.cleanup_camera(rtsp_url)
-        
-        removed_camera_ids = active_detections - current_camera_ids
-        for camera_id in removed_camera_ids:
-            print(f"⏹️ 삭제된 카메라 AI 탐지 중지: {camera_id}")
-            self.stop_detection_for_camera(camera_id)
-        
-        # 2. 새로 추가되거나 수정된 카메라들의 스트리밍과 탐지 시작
-        for camera in current_cameras:
-            # 백그라운드 스트리밍 시작 (새 카메라이거나 중지된 경우)
-            if camera.rtsp_url not in active_background:
-                print(f"🚀 새 카메라 백그라운드 스트리밍 시작: {camera.name}")
-                try:
-                    self.start_background_streaming(camera.rtsp_url)
-                except Exception as e:
-                    print(f"❌ 백그라운드 스트리밍 시작 실패: {e}")
+        """카메라 목록 변경 감지 후 스트리밍과 탐지를 실시간 업데이트 (안전한 버전)"""
+        try:
+            from .models import Camera
             
-            # AI 탐지 시작 (타겟 라벨이 있고 아직 시작되지 않은 경우)
-            if camera.target_labels.exists() and camera.id not in active_detections:
-                print(f"🎯 새 카메라 AI 탐지 시작: {camera.name} ({camera.target_labels.count()}개 라벨)")
-                try:
-                    self.start_detection_for_camera(camera)
-                except Exception as e:
-                    print(f"❌ AI 탐지 시작 실패: {e}")
+            print("🔄 AI 탐지 시스템 카메라 목록 업데이트")
             
-            # 타겟 라벨이 없어진 경우 AI 탐지 중지
-            elif not camera.target_labels.exists() and camera.id in active_detections:
-                print(f"⏹️ 타겟 라벨 없음 - AI 탐지 중지: {camera.name}")
-                self.stop_detection_for_camera(camera.id)
-        
-        print("✅ 카메라 실시간 업데이트 완료")
+            # 현재 DB의 카메라 목록 가져오기
+            current_cameras = Camera.objects.prefetch_related('target_labels').all()
+            current_camera_ids = set(camera.id for camera in current_cameras)
+            
+            # 현재 활성화된 AI 탐지 목록 (카메라 ID 기준)
+            active_detections = set(self.detection_active.keys()) if self.detection_active else set()
+            
+            # 1. 삭제된 카메라들의 AI 탐지 중지 (안전하게)
+            removed_camera_ids = active_detections - current_camera_ids
+            for camera_id in removed_camera_ids:
+                try:
+                    print(f"⏹️ 삭제된 카메라 AI 탐지 중지: {camera_id}")
+                    self.stop_detection_for_camera(camera_id)
+                except Exception as e:
+                    print(f"⚠️ AI 탐지 중지 오류: {e}")
+            
+            # 2. 새로 추가되거나 수정된 카메라들의 AI 탐지 시작/중지
+            for camera in current_cameras:
+                try:
+                    has_labels = camera.target_labels.exists()
+                    is_detecting = camera.id in active_detections
+                    
+                    # AI 탐지 시작 (타겟 라벨이 있고 아직 시작되지 않은 경우)
+                    if has_labels and not is_detecting:
+                        print(f"🎯 새 카메라 AI 탐지 시작: {camera.name} ({camera.target_labels.count()}개 라벨)")
+                        try:
+                            self.start_detection_for_camera(camera)
+                        except Exception as e:
+                            print(f"❌ AI 탐지 시작 실패: {e}")
+                    
+                    # 타겟 라벨이 없어진 경우 AI 탐지 중지
+                    elif not has_labels and is_detecting:
+                        print(f"⏹️ 타겟 라벨 없음 - AI 탐지 중지: {camera.name}")
+                        try:
+                            self.stop_detection_for_camera(camera.id)
+                        except Exception as e:
+                            print(f"⚠️ AI 탐지 중지 오류: {e}")
+                            
+                except Exception as e:
+                    print(f"⚠️ 카메라 '{camera.name}' 처리 오류: {e}")
+            
+            print("✅ AI 탐지 시스템 업데이트 완료")
+            
+        except Exception as e:
+            print(f"❌ AI 탐지 시스템 업데이트 중 오류: {e}")
+            import traceback
+            traceback.print_exc()
     
     def stop_all_detections(self):
         """모든 탐지 중지"""
