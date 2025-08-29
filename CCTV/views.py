@@ -69,6 +69,15 @@ def camera_create(request):
                 rtsp_url=rtsp_url
             )
             messages.success(request, f'카메라 "{camera.name}"이 성공적으로 추가되었습니다.')
+            
+            # 카메라 추가 후 스트리밍 및 탐지 시스템 업데이트
+            try:
+                camera_streamer.refresh_cameras()
+                ai_detection_system.refresh_cameras()
+                print(f"✅ 카메라 '{camera.name}' 추가 후 시스템 업데이트 완료")
+            except Exception as e:
+                print(f"⚠️ 카메라 추가 후 시스템 업데이트 오류: {e}")
+            
             return redirect('cctv:index')
         else:
             messages.error(request, '모든 필드를 입력해주세요.')
@@ -87,6 +96,15 @@ def camera_edit(request, camera_id):
         camera.save()
         
         messages.success(request, f'카메라 "{camera.name}"이 성공적으로 수정되었습니다.')
+        
+        # 카메라 수정 후 스트리밍 및 탐지 시스템 업데이트
+        try:
+            camera_streamer.refresh_cameras()
+            ai_detection_system.refresh_cameras()
+            print(f"✅ 카메라 '{camera.name}' 수정 후 시스템 업데이트 완료")
+        except Exception as e:
+            print(f"⚠️ 카메라 수정 후 시스템 업데이트 오류: {e}")
+        
         return redirect('cctv:index')
     
     return render(request, 'cctv/camera_form.html', {
@@ -103,6 +121,15 @@ def camera_delete(request, camera_id):
         camera_name = camera.name
         camera.delete()
         messages.success(request, f'카메라 "{camera_name}"이 성공적으로 삭제되었습니다.')
+        
+        # 카메라 삭제 후 스트리밍 및 탐지 시스템 업데이트
+        try:
+            camera_streamer.refresh_cameras()
+            ai_detection_system.refresh_cameras()
+            print(f"✅ 카메라 '{camera_name}' 삭제 후 시스템 업데이트 완료")
+        except Exception as e:
+            print(f"⚠️ 카메라 삭제 후 시스템 업데이트 오류: {e}")
+        
         return redirect('cctv:index')
     
     return render(request, 'cctv/camera_confirm_delete.html', {'camera': camera})
@@ -125,6 +152,14 @@ def target_label_create(request, camera_id):
                 has_alert=has_alert
             )
             messages.success(request, f'타겟 라벨 "{target_label.display_name}"이 성공적으로 추가되었습니다.')
+            
+            # 타겟 라벨 추가 후 AI 탐지 시스템 업데이트
+            try:
+                ai_detection_system.refresh_cameras()
+                print(f"✅ 타겟 라벨 '{target_label.display_name}' 추가 후 AI 탐지 업데이트 완료")
+            except Exception as e:
+                print(f"⚠️ 타겟 라벨 추가 후 AI 탐지 업데이트 오류: {e}")
+            
             return redirect('cctv:index')
         else:
             messages.error(request, '표시 이름과 라벨 이름을 입력해주세요.')
@@ -146,6 +181,14 @@ def target_label_edit(request, label_id):
         target_label.save()
         
         messages.success(request, f'타겟 라벨 "{target_label.display_name}"이 성공적으로 수정되었습니다.')
+        
+        # 타겟 라벨 수정 후 AI 탐지 시스템 업데이트
+        try:
+            ai_detection_system.refresh_cameras()
+            print(f"✅ 타겟 라벨 '{target_label.display_name}' 수정 후 AI 탐지 업데이트 완료")
+        except Exception as e:
+            print(f"⚠️ 타겟 라벨 수정 후 AI 탐지 업데이트 오류: {e}")
+        
         return redirect('cctv:index')
     
     return render(request, 'cctv/target_label_form.html', {
@@ -163,6 +206,14 @@ def target_label_delete(request, label_id):
         display_name = target_label.display_name
         target_label.delete()
         messages.success(request, f'타겟 라벨 "{display_name}"이 성공적으로 삭제되었습니다.')
+        
+        # 타겟 라벨 삭제 후 AI 탐지 시스템 업데이트
+        try:
+            ai_detection_system.refresh_cameras()
+            print(f"✅ 타겟 라벨 '{display_name}' 삭제 후 AI 탐지 업데이트 완료")
+        except Exception as e:
+            print(f"⚠️ 타겟 라벨 삭제 후 AI 탐지 업데이트 오류: {e}")
+        
         return redirect('cctv:index')
     
     return render(request, 'cctv/target_label_confirm_delete.html', {'target_label': target_label})
@@ -350,7 +401,7 @@ def background_streaming_status(request):
     """백그라운드 스트리밍 상태 확인"""
     try:
         from .models import Camera
-        cameras = Camera.objects.all()
+        cameras = Camera.objects.all()  # 실시간 DB 조회
         
         status_data = []
         for camera in cameras:

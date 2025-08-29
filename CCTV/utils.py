@@ -29,6 +29,38 @@ class CameraStreamer:
         self.reader_threads = {}
         self.background_streaming = {}  # 백그라운드 스트리밍 상태 추적
     
+    def refresh_cameras(self):
+        """카메라 목록 변경 감지 후 스트리밍을 실시간 업데이트"""
+        from .models import Camera
+        
+        print("🔄 스트리밍 시스템 카메라 목록 업데이트")
+        
+        # 현재 DB의 카메라 목록 가져오기
+        current_cameras = Camera.objects.all()
+        current_rtsp_urls = set(camera.rtsp_url for camera in current_cameras)
+        
+        # 현재 활성화된 백그라운드 스트리밍 목록
+        active_background = set(self.background_streaming.keys())
+        
+        # 1. 삭제된 카메라들의 스트리밍 중지
+        removed_urls = active_background - current_rtsp_urls
+        for rtsp_url in removed_urls:
+            print(f"⏹️ 삭제된 카메라 스트리밍 중지: {rtsp_url}")
+            self.stop_background_streaming(rtsp_url)
+            self.cleanup_camera(rtsp_url)
+        
+        # 2. 새로 추가된 카메라들의 스트리밍 시작
+        new_urls = current_rtsp_urls - active_background
+        for camera in current_cameras:
+            if camera.rtsp_url in new_urls:
+                print(f"🚀 새 카메라 백그라운드 스트리밍 시작: {camera.name}")
+                try:
+                    self.start_background_streaming(camera.rtsp_url)
+                except Exception as e:
+                    print(f"❌ 백그라운드 스트리밍 시작 실패: {e}")
+        
+        print("✅ 스트리밍 시스템 업데이트 완료")
+    
     def get_camera_stream(self, rtsp_url):
         # print(f"🔐 global_lock 획득 시도: {rtsp_url}")
         
@@ -496,13 +528,16 @@ class CameraStreamer:
         return self.background_streaming.get(rtsp_url, False)
     
     def start_all_background_streaming(self):
-        """모든 카메라의 백그라운드 스트리밍 시작"""
+        """모든 카메라의 백그라운드 스트리밍 시작 (DB에서 실시간 조회)"""
         from .models import Camera
-        cameras = Camera.objects.all()
+        cameras = Camera.objects.all()  # 매번 최신 카메라 목록을 가져옴
+        
+        print(f"🔄 백그라운드 스트리밍 시작: 총 {cameras.count()}개 카메라")
         
         for camera in cameras:
             try:
                 self.start_background_streaming(camera.rtsp_url)
+                print(f"✅ 카메라 '{camera.name}' 백그라운드 스트리밍 시작")
             except Exception as e:
                 print(f"❌ 카메라 '{camera.name}' 백그라운드 스트리밍 실패: {e}")
     
@@ -1337,21 +1372,78 @@ class AIDetectionSystem:
         return self.alert_queue
     
     def start_all_detections(self):
-        """모든 활성 카메라에 대한 탐지 시작 (자동 시작 모드)"""
+        """모든 활성 카메라에 대한 탐지 시작 (DB에서 실시간 조회)"""
         from .models import Camera
         
-        cameras = Camera.objects.all()
+        cameras = Camera.objects.prefetch_related('target_labels').all()  # 매번 최신 카메라와 라벨 목록을 가져옴
         started_count = 0
         
+        print(f"🔄 AI 탐지 시작: 총 {cameras.count()}개 카메라 확인")
+        
         for camera in cameras:
-            # 타겟 라벨이 있는 카메라이거나, 자동 시작 모드에서는 모든 카메라 시작
+            # 타겟 라벨이 있는 카메라만 탐지 시작
             if camera.target_labels.exists():
                 self.start_detection_for_camera(camera)
                 started_count += 1
+                print(f"✅ 카메라 '{camera.name}' AI 탐지 시작 (타겟 라벨: {camera.target_labels.count()}개)")
             else:
                 print(f"⚠️ 카메라 '{camera.name}'에 타겟 라벨이 없어 AI 탐지를 건너뜁니다")
         
         print(f"🤖 총 {started_count}개 카메라에서 AI 탐지 시작됨")
+    
+    def refresh_cameras(self):
+        """카메라 목록 변경 감지 후 스트리밍과 탐지를 실시간 업데이트"""
+        from .models import Camera
+        
+        print("🔄 카메라 목록 변경 감지 - 실시간 업데이트 시작")
+        
+        # 현재 DB의 카메라 목록 가져오기
+        current_cameras = Camera.objects.prefetch_related('target_labels').all()
+        current_rtsp_urls = set(camera.rtsp_url for camera in current_cameras)
+        
+        # 현재 활성화된 백그라운드 스트리밍 목록
+        active_background = set(self.background_streaming.keys())
+        
+        # 현재 활성화된 AI 탐지 목록 (카메라 ID 기준)
+        active_detections = set(self.detection_active.keys())
+        current_camera_ids = set(camera.id for camera in current_cameras)
+        
+        # 1. 삭제된 카메라들의 스트리밍과 탐지 중지
+        removed_urls = active_background - current_rtsp_urls
+        for rtsp_url in removed_urls:
+            print(f"⏹️ 삭제된 카메라 스트리밍 중지: {rtsp_url}")
+            self.stop_background_streaming(rtsp_url)
+            self.cleanup_camera(rtsp_url)
+        
+        removed_camera_ids = active_detections - current_camera_ids
+        for camera_id in removed_camera_ids:
+            print(f"⏹️ 삭제된 카메라 AI 탐지 중지: {camera_id}")
+            self.stop_detection_for_camera(camera_id)
+        
+        # 2. 새로 추가되거나 수정된 카메라들의 스트리밍과 탐지 시작
+        for camera in current_cameras:
+            # 백그라운드 스트리밍 시작 (새 카메라이거나 중지된 경우)
+            if camera.rtsp_url not in active_background:
+                print(f"🚀 새 카메라 백그라운드 스트리밍 시작: {camera.name}")
+                try:
+                    self.start_background_streaming(camera.rtsp_url)
+                except Exception as e:
+                    print(f"❌ 백그라운드 스트리밍 시작 실패: {e}")
+            
+            # AI 탐지 시작 (타겟 라벨이 있고 아직 시작되지 않은 경우)
+            if camera.target_labels.exists() and camera.id not in active_detections:
+                print(f"🎯 새 카메라 AI 탐지 시작: {camera.name} ({camera.target_labels.count()}개 라벨)")
+                try:
+                    self.start_detection_for_camera(camera)
+                except Exception as e:
+                    print(f"❌ AI 탐지 시작 실패: {e}")
+            
+            # 타겟 라벨이 없어진 경우 AI 탐지 중지
+            elif not camera.target_labels.exists() and camera.id in active_detections:
+                print(f"⏹️ 타겟 라벨 없음 - AI 탐지 중지: {camera.name}")
+                self.stop_detection_for_camera(camera.id)
+        
+        print("✅ 카메라 실시간 업데이트 완료")
     
     def stop_all_detections(self):
         """모든 탐지 중지"""
