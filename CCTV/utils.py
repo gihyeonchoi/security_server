@@ -1018,10 +1018,10 @@ class AIDetectionSystem:
 
     def _detect_objects(self, frame, target_labels, camera):
         """
-        Softmax 방식으로 객체 탐지
-        - YOLO는 후보 박스만 제공
+        person 객체만 탐지하는 Softmax 방식 객체 탐지
+        - YOLO에서 person 클래스만 필터링
         - CLIP이 모든 라벨 + "other object"를 동시에 비교
-        - "other object"가 최고점이면 무시
+        - person 객체 탐지 시 15% 확장된 영역 사용
         """
         detections = []
         
@@ -1050,10 +1050,22 @@ class AIDetectionSystem:
                 if len(boxes) == 0:
                     return detections
                 
-                # print(f"📊 YOLO 후보 박스: {len(boxes)}개 탐지")
-                
-                # YOLO 클래스 이름 가져오기 (디버깅용)
+                # YOLO 클래스 이름 가져오기
                 class_names = yolo_result.names if hasattr(yolo_result, 'names') else {}
+                
+                # person 클래스만 필터링 (COCO 데이터셋에서 person은 클래스 0)
+                person_mask = classes == 0  # person 클래스 ID
+                
+                if not person_mask.any():
+                    print("📊 YOLO에서 person 객체를 찾지 못했음")
+                    return detections
+                    
+                # person 객체만 필터링
+                person_boxes = boxes[person_mask]
+                person_confidences = confidences[person_mask]
+                person_classes = classes[person_mask]
+                
+                print(f"📊 YOLO person 객체: {len(person_boxes)}개 탐지")
                 
                 # 2. CLIP을 위한 텍스트 준비 (DB 라벨 + "other object")
                 text_queries = []
@@ -1084,17 +1096,17 @@ class AIDetectionSystem:
                 
                 # print(f"🔧 현재 CLIP_CONFIDENCE_THRESHOLD: {CLIP_CONFIDENCE_THRESHOLD}")
 
-                # 4. 각 박스에 대해 CLIP으로 분류
-                for box_idx, (box, yolo_conf, cls) in enumerate(zip(boxes, confidences, classes)):
+                # 4. 각 person 박스에 대해 CLIP으로 분류
+                for box_idx, (box, yolo_conf, cls) in enumerate(zip(person_boxes, person_confidences, person_classes)):
                     x1, y1, x2, y2 = map(int, box)
                     
-                    # 박스 크기를 20% 확장
+                    # person 박스 크기를 20% 확장
                     box_scale_extend = 0.1
 
                     box_width = x2 - x1
                     box_height = y2 - y1
-                    expand_w = int(box_width * box_scale_extend)  # 양쪽으로 10%씩 = 총 20%
-                    expand_h = int(box_height * box_scale_extend)  # 위아래로 10%씩 = 총 20%
+                    expand_w = int(box_width * box_scale_extend)
+                    expand_h = int(box_height * box_scale_extend)
                     
                     # 프레임 경계 내에서 확장
                     frame_h, frame_w = frame.shape[:2]
@@ -1108,8 +1120,9 @@ class AIDetectionSystem:
                     if cropped_region.size == 0:
                         continue
                     
-                    # YOLO 클래스 이름 (디버깅용)
-                    yolo_class = class_names.get(int(cls), f'class_{int(cls)}')
+                    # person 클래스 확인
+                    yolo_class = class_names.get(int(cls), 'person')
+                    print(f"👤 person 객체 박스 {box_idx}: {yolo_class} (conf: {yolo_conf:.2f}, 확장: 15%)")
                     
                     # CLIP으로 이미지 인코딩
                     pil_crop = Image.fromarray(cv2.cvtColor(cropped_region, cv2.COLOR_BGR2RGB))
@@ -1182,7 +1195,7 @@ class AIDetectionSystem:
                         # print(f"   - 경고 설정: {'활성' if target_label.has_alert else '비활성'}")
                 
                 if not detections:
-                    print(f"💤 탐지된 유효 객체 없음 (모두 'other object'이거나 신뢰도 미달)")
+                    print(f"💤 탐지된 person 객체 없음 (모두 'other object'이거나 신뢰도 미달)")
             
         except Exception as e:
             print(f"❌ 객체 탐지 오류: {e}")
