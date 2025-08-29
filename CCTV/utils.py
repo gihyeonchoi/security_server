@@ -374,7 +374,7 @@ class CameraStreamer:
                         break
                     
                     # CPU 사용량 제어 및 FFmpeg 안정성
-                    time.sleep(0.02)  # 50 FPS 제한
+                    # time.sleep(0.02)  # 50 FPS 제한
                     
                 except Exception as thread_error:
                     if current_time - last_error_log > 10.0:  # 10초마다 오류 로그
@@ -561,8 +561,8 @@ class CameraStreamer:
                        b'Content-Length: ' + f'{len(frame_bytes)}'.encode() + b'\r\n\r\n' + 
                        frame_bytes + b'\r\n')
                 
-                # FPS 제어 (무너 빠른 전송 방지)
-                time.sleep(0.033)  # 30 FPS 제한
+                # FPS 제어 (너무 빠른 전송 방지)
+                # time.sleep(0.033)  # 30 FPS 제한
                 
         except GeneratorExit:
             pass
