@@ -19,7 +19,8 @@ from django.utils import timezone
 # 다중 사용자 위치 정보를 메모리에 저장
 # {device_id: {"latitude": float, "longitude": float, "altitude": float, "last_update": datetime, "calculated_floor": int}}
 user_locations = {}
-
+altitude = 0.0
+location_id = 0.0
 # 5초 타임아웃으로 비활성 사용자 정리
 def cleanup_inactive_users():
     global user_locations
@@ -35,9 +36,69 @@ def cleanup_inactive_users():
     for device_id in inactive_users:
         del user_locations[device_id]
         print(f"⏰ 타임아웃: {device_id} 사용자 제거")
+@csrf_exempt
+def start_location_api(request):
+    global altitude
+    global location_id
+    cleanup_inactive_users()
 
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            altitude = data.get('altitude')
+            location_id = data.get('location_id')  # 어떤 위치인지 지정
+
+            if altitude is not None:
+                # 층수 계산을 위해 Location 정보 가져오기
+                calculated_floor = None
+                if location_id:
+                    try:
+                        location = Location.objects.get(name=location_id)
+                        calculated_floor = location.calculate_floor_from_altitude(altitude)
+                    except Location.DoesNotExist:
+                        pass
+
+                try:
+                    base_building = Location.objects.get(name=location_id)
+                    base_building.base_floor_altitude = altitude
+                    base_building.save()
+                    print(f"{location_id} 위치 저장 : 고도 {altitude}")
+                except Location.DoesNotExist:
+                    print("대학본부 레코드를 찾을 수 없습니다.")
+                return JsonResponse({
+                    "status": "ok", 
+                    "message": "Location received",
+                    "calculated_floor": calculated_floor,
+                    "active_users": len(user_locations)
+                })
+            else:
+                return JsonResponse({"status": "error", "message": "Missing location data (latitude, longitude, altitude required)"}, status=400)
+        except json.JSONDecodeError:
+            return JsonResponse({"status": "error", "message": "Invalid JSON"}, status=400)
+    
+    elif request.method == 'GET':
+        # 모든 활성 사용자 위치 정보 반환
+        location_id = request.GET.get('location_id')
+        
+        # 특정 location에 대한 사용자들만 필터링
+        filtered_locations = {}
+        if location_id:
+            filtered_locations = {
+                device_id: data for device_id, data in user_locations.items()
+                # if data.get('location_id') == int(location_id)
+            }
+        else:
+            filtered_locations = user_locations
+            
+        print(f"🛰️ GET 요청: {len(filtered_locations)}명의 활성 사용자 정보 전송")
+        return JsonResponse({
+                "user_locations": filtered_locations,
+                "total_users": len(filtered_locations)
+        })
 @csrf_exempt
 def location_api(request):
+    # global altitude
+    # global location_id
     global user_locations
     
     # 비활성 사용자 정리
@@ -60,7 +121,7 @@ def location_api(request):
                 calculated_floor = None
                 if location_id:
                     try:
-                        location = Location.objects.get(id=location_id)
+                        location = Location.objects.get(name=location_id)
                         calculated_floor = location.calculate_floor_from_altitude(altitude)
                     except Location.DoesNotExist:
                         pass
@@ -95,7 +156,7 @@ def location_api(request):
         if location_id:
             filtered_locations = {
                 device_id: data for device_id, data in user_locations.items()
-                if data.get('location_id') == int(location_id)
+                # if data.get('location_id') == int(location_id)
             }
         else:
             filtered_locations = user_locations

@@ -108,12 +108,13 @@ int LAST_SENSOR_STATE = 0;  // 이전 센서 상태 저장
 
 // 문 열림 스위치
 int SWITCH_STATE = 0; // sw 입력값 read
-int buttonState;
-int lastButtonState = LOW;
+int buttonState = HIGH;  // 초기값을 HIGH로 설정 (PULLUP이므로)
+int lastButtonState = HIGH;  // 초기값을 HIGH로 설정
 unsigned long buttonPressTime = 0;  // 버튼 누른시간 체크
 unsigned long lastDebounceTime = 0;
-int debounceDelay=100;
-int debounceDelay_For_Init_Setting = 5000;  // 세팅 초기화
+int debounceDelay = 50;  // 일반 디바운스 시간 줄임
+int debounceDelay_For_Init_Setting = 5000;  // 세팅 초기화 (5초)
+bool longPressExecuted = false;  // 길게 누름 동작 실행 여부
 
 // 문 열림/닫힘 확인용
 bool isDoorOpen = false;
@@ -141,10 +142,6 @@ void loop() {
   if(wifiManager.isConnected()) {
     // WiFi 연결됨 - 정상 작업 수행
     static unsigned long lastTAG = 0;   // 태그 한번만 되게
-    // static unsigned long swChattering = 0;   // 스위치 채터링
-    // Serial.println(millis());
-    // Serial.println(lastAction);
-    // Serial.println("--------------------------------");
 
     // ====================== 자동 문잠김 ======================
     if(!isDoorOpen && !autoLockDone && ((millis() - doorOpenTime) > autoLockTime)){
@@ -152,36 +149,67 @@ void loop() {
       Serial.println("자동으로 문닫힘");
       autoLockDone = true; // 한 번만 실행되게 플래그 ON
     }
-    // ====================== 스위치 동작 체크 ======================
+    
+    // ====================== 스위치 동작 체크 (개선된 버전) ======================
     SWITCH_STATE = digitalRead(DOOR_OPEN_SWITCH);
 
-    if (SWITCH_STATE != lastButtonState){
+    // 버튼 상태 변경 감지
+    if (SWITCH_STATE != lastButtonState) {
       lastDebounceTime = millis();
     }
     
+    // 디바운스 시간이 지난 후 처리
     if ((millis() - lastDebounceTime) > debounceDelay) {
+      // 실제 버튼 상태가 변경되었는지 확인
       if (SWITCH_STATE != buttonState) {
         buttonState = SWITCH_STATE;
+        
+        // 버튼을 눌렀을 때 (HIGH -> LOW)
         if (buttonState == LOW) {
           buttonPressTime = millis();
-        } else {
+          longPressExecuted = false;  // 길게 누름 플래그 초기화
+          Serial.println("버튼 눌림 시작");
+        } 
+        // 버튼을 떼었을 때 (LOW -> HIGH)
+        else {
           unsigned long pressDuration = millis() - buttonPressTime;
-          if (pressDuration >= debounceDelay_For_Init_Setting && !isFirstStart) {
-            Serial.println("길게누름 : 초기화함");
-            wifiManager.clearSettings(true);
-          } else {
+          Serial.print("버튼 누른 시간: ");
+          Serial.print(pressDuration);
+          Serial.println("ms");
+          
+          // 길게 누름이 실행되지 않았고, 짧게 눌렀을 때만 문 열기
+          if (!longPressExecuted && pressDuration < debounceDelay_For_Init_Setting) {
             Serial.println("짧게누름 : 문열림");
             digitalWrite(SOLENOID_LOCK, HIGH);
           }
         }
       }
     }
+    
+    // 버튼을 누르고 있는 동안 길게 누름 체크 (실시간 체크)
+    if (buttonState == LOW && !longPressExecuted) {
+      unsigned long currentPressDuration = millis() - buttonPressTime;
+      if (currentPressDuration >= debounceDelay_For_Init_Setting) {
+        Serial.println("길게누름 감지 : WiFi 설정 초기화");
+        longPressExecuted = true;  // 한 번만 실행되도록
+        
+        // LED로 초기화 시작 알림 (빠르게 깜빡임)
+        for(int i = 0; i < 10; i++) {
+          digitalWrite(LED_PIN, HIGH);
+          delay(100);
+          digitalWrite(LED_PIN, LOW);
+          delay(100);
+        }
+        
+        wifiManager.clearSettings(true);
+        // clearSettings 내부에서 ESP.restart()가 호출되므로 이후 코드는 실행되지 않음
+      }
+    }
+    
     lastButtonState = SWITCH_STATE;
 
     // ====================== 도어센서 체크 =========================
     SENSOR_STATE = digitalRead(DOOR_SENSOR_PIN);
-    // Serial.print("센서 상태 : ");
-    // Serial.println(SENSOR_STATE);
     
     // 센서 상태 변경 감지
     if(SENSOR_STATE != LAST_SENSOR_STATE) {
@@ -208,10 +236,8 @@ void loop() {
       lastDoorStatusUpdate = millis();
     }
 
-    // ====================== 중간 내용 =============================
-    
+    // ====================== RFID 태그 체크 =========================
     if(millis() - lastTAG > 1000) { // 1초마다
-      // ====================== RFID 태그 체크 =========================
       // 모듈 근처에 카드가 붙었는지 체크
       if (!rfid.PICC_IsNewCardPresent())
         return;
@@ -238,6 +264,7 @@ void loop() {
       Serial.println(hexID);
 
       HTTPClient http;
+      http.setTimeout(5000);
       http.begin(ServerURL);
       http.addHeader("Content-Type", "application/json");
 
@@ -292,8 +319,8 @@ void loop() {
       lastTAG = millis();
     }
     // 너무 자주 실행되지 않게끔
-    delay(500);
-    isFirstStart = false;
+    delay(100);  // 500ms -> 100ms로 줄여서 버튼 반응성 개선
+    
   } else if(wifiManager.isInConfigMode()) {
     // 설정 모드 - 사용자가 WiFi 설정 중
     static unsigned long lastConfigMsg = 0;
@@ -301,9 +328,9 @@ void loop() {
       Serial.println("설정 모드 - WiFi 설정을 기다리는 중...");
       Serial.println("디바이스 코드: " + wifiManager.getDeviceCode());
       lastConfigMsg = millis();
-      isFirstStart = true;
     }
   }
+  
   if (WiFi.status() != WL_CONNECTED) {
     return;
   }

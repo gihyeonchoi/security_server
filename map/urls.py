@@ -8,6 +8,7 @@ urlpatterns = [
     # 지도 보기
     path('', views.map_view, name='map_view'),
     path('location/', views.location_api, name='location_api'),
+    path('start_location/', views.start_location_api, name='start_location_api'),
 
     # 위치 관리
     path('locations/', views.LocationListView.as_view(), name='location_list'),

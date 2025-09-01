@@ -309,10 +309,6 @@ class CameraStreamer:
                             # 큐가 3개 이상이면 하나 빼고 새로 넣기
                             try:
                                 old_frame = frame_queue.get_nowait()
-                                if isinstance(old_frame, dict):
-                                    # 로그 줄이기 (10번에 1번만)
-                                    if frame_skip_counter % 10 == 0:
-                                        print(f"🔄 큐 정리 중 (크기: {frame_queue.qsize()})")
                             except queue.Empty:
                                 pass
                         
@@ -958,12 +954,12 @@ class AIDetectionSystem:
                     continue
                 
                 # 프레임 정보 출력
-                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-                print(f"\n📹 프레임 획득: 카메라 '{camera.name}'")
-                print(f"   - 프레임 캡처 시간: {frame_timestamp}")
-                print(f"   - 현재 처리 시간: {current_time}")
-                print(f"   - 프레임 지연: {frame_age:.2f}초")
-                print(f"   - 프레임 크기: {frame.shape}")
+                # current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                # print(f"\n📹 프레임 획득: 카메라 '{camera.name}'")
+                # print(f"   - 프레임 캡처 시간: {frame_timestamp}")
+                # print(f"   - 현재 처리 시간: {current_time}")
+                # print(f"   - 프레임 지연: {frame_age:.2f}초")
+                # print(f"   - 프레임 크기: {frame.shape}")
                 
                 # 프레임이 너무 오래되었으면 스킵
                 if frame_age > 5.0:
@@ -992,18 +988,18 @@ class AIDetectionSystem:
                 
                 # 탐지 결과 처리
                 if detections:
-                    print(f"✨ 탐지 완료! {len(detections)}개 타겟 발견 (시간: {current_time})")
+                    # print(f"✨ 탐지 완료! {len(detections)}개 타겟 발견 (시간: {current_time})")
                     for detection in detections:
                         self._process_detection(camera, frame, detection, target_labels)
                         # 매 탐지마다 별도 스크린샷 저장
                         self._save_all_detection_screenshot(camera, frame, detection)
                 else:
-                    print(f"💤 탐지된 객체 없음 (시간: {current_time})")
+                    pass
                 
                 # 탐지 간격 계산 및 표시
-                time_since_last = time.time() - last_detection_time
-                print(f"📊 탐지 주기: {time_since_last:.1f}초")
-                last_detection_time = time.time()
+                # time_since_last = time.time() - last_detection_time
+                # print(f"📊 탐지 주기: {time_since_last:.1f}초")
+                # last_detection_time = time.time()
                 
                 # 탐지 간격
                 time.sleep(1.5)
@@ -1035,7 +1031,7 @@ class AIDetectionSystem:
         
         try:
             # 1. YOLO로 후보 박스 추출
-            results = self.yolo_model(frame, conf=YOLO_CANDIDATE_THRESHOLD, verbose=True, imgsz=960)
+            results = self.yolo_model(frame, conf=YOLO_CANDIDATE_THRESHOLD, imgsz=960)
             
             if not results or len(results) == 0:
                 return detections
