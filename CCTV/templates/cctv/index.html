@@ -412,5 +412,24 @@ function openCameraStream(cameraId, cameraName) {
     
     return false; // 기본 링크 동작 방지
 }
+
+// SSE 연결 keep-alive (Map 페이지처럼 지속적으로 활성화 유지)
+document.addEventListener('DOMContentLoaded', function() {
+    // 5초마다 SSE 연결 상태 확인 및 keep-alive
+    setInterval(function() {
+        if (typeof eventSource !== 'undefined' && eventSource) {
+            if (eventSource.readyState === EventSource.OPEN) {
+                console.debug('💓 CCTV 페이지 SSE keep-alive');
+            } else if (eventSource.readyState === EventSource.CLOSED) {
+                console.log('🔄 CCTV 페이지 SSE 재연결 시도');
+                if (typeof initDetectionAlerts === 'function') {
+                    initDetectionAlerts();
+                }
+            }
+        }
+    }, 1000); // 5초마다 확인
+    
+    console.log('✅ CCTV 페이지 SSE keep-alive 시스템 시작');
+});
 </script>
 {% endblock %}
