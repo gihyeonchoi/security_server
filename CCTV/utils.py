@@ -892,17 +892,32 @@ class AIDetectionSystem:
             self.clip_model = None
     
     def start_detection_for_camera(self, camera):
-        """특정 카메라에 대한 탐지 시작"""
-        if camera.id not in self.detection_active:
-            self.detection_active[camera.id] = True
-            detection_thread = threading.Thread(
-                target=self._detection_worker,
-                args=(camera,),
-                daemon=True
-            )
-            self.detection_threads[camera.id] = detection_thread
-            detection_thread.start()
-            print(f"🎯 카메라 '{camera.name}' 탐지 시작")
+        """특정 카메라에 대한 탐지 시작 - 기존 스레드 완전 종료 확인 후 시작"""
+        # 기존 스레드가 있다면 완전히 종료될 때까지 대기
+        if camera.id in self.detection_threads:
+            old_thread = self.detection_threads[camera.id]
+            if old_thread and old_thread.is_alive():
+                print(f"⏳ 카메라 '{camera.name}' 기존 탐지 스레드 종료 대기...")
+                # 플래그를 False로 설정
+                self.detection_active[camera.id] = False
+                # 스레드가 종료될 때까지 최대 5초 대기
+                old_thread.join(timeout=5.0)
+                if old_thread.is_alive():
+                    print(f"⚠️ 카메라 '{camera.name}' 기존 스레드 강제 종료 (타임아웃)")
+                else:
+                    print(f"✅ 카메라 '{camera.name}' 기존 스레드 정상 종료됨")
+        
+        # 새로운 탐지 스레드 시작
+        self.detection_active[camera.id] = True
+        detection_thread = threading.Thread(
+            target=self._detection_worker,
+            args=(camera,),
+            daemon=True,
+            name=f"Detection-{camera.name}-{camera.id}"
+        )
+        self.detection_threads[camera.id] = detection_thread
+        detection_thread.start()
+        print(f"🎯 카메라 '{camera.name}' 새로운 탐지 스레드 시작")
     
     def stop_detection_for_camera(self, camera_id):
         """특정 카메라에 대한 탐지 중지"""
@@ -966,8 +981,15 @@ class AIDetectionSystem:
                     print(f"   ⚠️ 프레임이 너무 오래됨 ({frame_age:.1f}초), 스킵")
                     continue
                 
-                # 타겟 라벨 가져오기
-                target_labels = list(camera.target_labels.all())
+                # 매 루프마다 카메라와 타겟 라벨 정보를 DB에서 새로 가져오기 (중요!)
+                try:
+                    from .models import Camera
+                    camera = Camera.objects.prefetch_related('target_labels').get(id=camera.id)
+                    target_labels = list(camera.target_labels.all())
+                except Camera.DoesNotExist:
+                    print(f"❌ 카메라 ID {camera.id}가 삭제됨 - 탐지 중지")
+                    break
+                
                 if not target_labels:
                     print(f"⚠️ 카메라 '{camera.name}'에 타겟 라벨이 없음")
                     time.sleep(5)
@@ -1022,8 +1044,8 @@ class AIDetectionSystem:
         detections = []
         
         # 임계치 설정
-        YOLO_CANDIDATE_THRESHOLD = 0.6   # YOLO 후보 박스 임계치
-        CLIP_CONFIDENCE_THRESHOLD = 0.6   # CLIP softmax 최소 신뢰도
+        YOLO_CANDIDATE_THRESHOLD = 0.5   # YOLO 후보 박스 임계치
+        CLIP_CONFIDENCE_THRESHOLD = 0.73   # CLIP softmax 최소 신뢰도
         
         if self.yolo_model is None or self.clip_model is None:
             print("⚠️ YOLO 또는 CLIP 모델이 로드되지 않음")
@@ -1097,7 +1119,7 @@ class AIDetectionSystem:
                     x1, y1, x2, y2 = map(int, box)
                     
                     # person 박스 크기를 20% 확장
-                    box_scale_extend = 0.1
+                    box_scale_extend = 0.2
 
                     box_width = x2 - x1
                     box_height = y2 - y1
