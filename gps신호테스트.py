@@ -23,8 +23,8 @@ while True:
         "device_id": "device123",
         "latitude": latitude,
         "longitude": longitude,
-        "altitude": 101.3532,         # 고도는 고정
-        "location_id": 3
+        "altitude": 291.100006,         # 고도는 고정
+        "location_id": "대학본부"
     }
 
     try:

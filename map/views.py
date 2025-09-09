@@ -36,6 +36,7 @@ def cleanup_inactive_users():
     for device_id in inactive_users:
         del user_locations[device_id]
         print(f"⏰ 타임아웃: {device_id} 사용자 제거")
+        
 @csrf_exempt
 def start_location_api(request):
     global altitude
@@ -47,6 +48,7 @@ def start_location_api(request):
             data = json.loads(request.body)
             altitude = data.get('altitude')
             location_id = data.get('location_id')  # 어떤 위치인지 지정
+            print(f"로케이션id : {location_id}")
 
             if altitude is not None:
                 # 층수 계산을 위해 Location 정보 가져오기
@@ -107,6 +109,7 @@ def location_api(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
+            print(data)
             device_id = data.get('device_id')
             latitude = data.get('latitude')
             longitude = data.get('longitude')
@@ -119,10 +122,12 @@ def location_api(request):
             if latitude is not None and longitude is not None and altitude is not None:
                 # 층수 계산을 위해 Location 정보 가져오기
                 calculated_floor = None
+                print(f"로케이션 아이디 층수계산때 쓸거 : {location_id}")
                 if location_id:
                     try:
                         location = Location.objects.get(name=location_id)
                         calculated_floor = location.calculate_floor_from_altitude(altitude)
+                        print(f"계산된 층수 : {calculated_floor}")
                     except Location.DoesNotExist:
                         pass
 

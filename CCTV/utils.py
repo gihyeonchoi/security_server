@@ -857,7 +857,8 @@ class AIDetectionSystem:
             
             if os.path.exists(yolo_path):
                 # 헤드리스 환경에서 YOLO 모델 로드 시 verbose=False 설정
-                self.yolo_model = YOLO(yolo_path)
+                # self.yolo_model = YOLO(yolo_path)
+                self.yolo_model = YOLO()
                 # GPU 사용 불가능한 경우 CPU로 강제 설정
                 if not torch.cuda.is_available():
                     self.device = "cpu"
