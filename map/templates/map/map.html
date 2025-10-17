@@ -213,6 +213,9 @@
         // 사용자별 점 저장 객체
         let userDots = {};
         
+        // 부드러운 이동을 위한 보간 설정
+        const SMOOTH_ANIMATION_DURATION = 1000; // 1초간 부드럽게 이동
+        
         // 현재 층의 GPS 데이터 가져오기
         function getCurrentFloorGPS() {
             const activeMap = document.querySelector('img:not(.hidden)');
@@ -291,6 +294,7 @@
             const gpsData = getCurrentFloorGPS();
             if (!gpsData || !gpsData.topLeft.lat || !gpsData.topLeft.lon || 
                 !gpsData.bottomRight.lat || !gpsData.bottomRight.lon) {
+                console.log('GPS 데이터 없음');
                 return null;
             }
             
@@ -314,14 +318,20 @@
             const pixelX = lonFraction * mapWidth;
             const pixelY = latFraction * mapHeight;
 
+            // 디버그 정보 출력
+            console.log(`🎯 좌표 변환: GPS(${lat}, ${lon}) -> Pixel(${pixelX.toFixed(1)}, ${pixelY.toFixed(1)})`);
+            console.log(`   지도 경계: (${gpsData.topLeft.lat}, ${gpsData.topLeft.lon}) ~ (${gpsData.bottomRight.lat}, ${gpsData.bottomRight.lon})`);
+            console.log(`   비율: lat=${latFraction.toFixed(3)}, lon=${lonFraction.toFixed(3)}, 지도크기: ${mapWidth}x${mapHeight}`);
+
             if (pixelX >= 0 && pixelX <= mapWidth && pixelY >= 0 && pixelY <= mapHeight) {
                 return { x: pixelX, y: pixelY };
             }
+            console.log(`❌ 픽셀 좌표가 지도 범위 밖: (${pixelX.toFixed(1)}, ${pixelY.toFixed(1)})`);
             return null;
         }
 
         /**
-         * 사용자별 점 생성/업데이트 함수
+         * 사용자별 점 생성/업데이트 함수 (부드러운 애니메이션 포함)
          */
         function createOrUpdateUserDot(deviceId, pixelCoords, floorNumber) {
             const mapContainer = document.getElementById('map-container');
@@ -339,13 +349,44 @@
                 const colorIndex = deviceId.split('').reduce((a, b) => a + b.charCodeAt(0), 0) % colors.length;
                 dot.style.backgroundColor = colors[colorIndex];
                 
+                // 초기 위치 설정
+                dot.style.left = `${pixelCoords.x}px`;
+                dot.style.top = `${pixelCoords.y}px`;
+                
                 mapContainer.appendChild(dot);
                 userDots[deviceId] = dot;
+                userDots[deviceId].lastPosition = pixelCoords;
+            } else {
+                // 기존 점 부드럽게 이동
+                const dot = userDots[deviceId];
+                const lastPos = userDots[deviceId].lastPosition || {x: pixelCoords.x, y: pixelCoords.y};
+                
+                // 거리 계산
+                const distance = Math.sqrt(
+                    Math.pow(pixelCoords.x - lastPos.x, 2) + 
+                    Math.pow(pixelCoords.y - lastPos.y, 2)
+                );
+                
+                // 일정 거리 이상 움직인 경우에만 애니메이션
+                if (distance > 2) {
+                    // CSS 트랜지션 활성화
+                    dot.style.transition = `left ${SMOOTH_ANIMATION_DURATION}ms ease-out, top ${SMOOTH_ANIMATION_DURATION}ms ease-out`;
+                    
+                    // 새 위치로 이동
+                    dot.style.left = `${pixelCoords.x}px`;
+                    dot.style.top = `${pixelCoords.y}px`;
+                    
+                    // 애니메이션 완료 후 트랜지션 제거
+                    setTimeout(() => {
+                        dot.style.transition = '';
+                    }, SMOOTH_ANIMATION_DURATION);
+                    
+                    userDots[deviceId].lastPosition = pixelCoords;
+                    console.log(`🎯 사용자 [${deviceId}] 부드럽게 이동: 거리=${distance.toFixed(1)}px`);
+                }
             }
             
             const dot = userDots[deviceId];
-            dot.style.left = `${pixelCoords.x}px`;
-            dot.style.top = `${pixelCoords.y}px`;
             dot.style.display = 'block';
             dot.setAttribute('data-floor', floorNumber);
             

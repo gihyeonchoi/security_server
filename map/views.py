@@ -17,10 +17,68 @@ from datetime import datetime, timedelta
 from django.utils import timezone
 
 # 다중 사용자 위치 정보를 메모리에 저장
-# {device_id: {"latitude": float, "longitude": float, "altitude": float, "last_update": datetime, "calculated_floor": int}}
+# {device_id: {"latitude": float, "longitude": float, "altitude": float, "last_update": datetime, "calculated_floor": int, "history": []}}
 user_locations = {}
 altitude = 0.0
 location_id = 0.0
+
+# GPS 정확도 개선을 위한 설정
+GPS_HISTORY_SIZE = 5  # 최근 5개 데이터로 평균 계산
+GPS_ACCURACY_THRESHOLD = 0.0001  # 급격한 변화 감지 임계값 (약 10m)
+
+# 조정 가능한 정확도 설정들:
+# GPS_HISTORY_SIZE = 3      # 빠른 반응 (3개 평균)
+# GPS_HISTORY_SIZE = 10     # 더 부드러운 이동 (10개 평균)
+# GPS_ACCURACY_THRESHOLD = 0.00005  # 더 민감한 감지 (약 5m)
+# GPS_ACCURACY_THRESHOLD = 0.0002   # 덜 민감한 감지 (약 20m)
+
+def smooth_gps_data(device_id, new_lat, new_lon, new_alt):
+    """GPS 데이터 평활화 함수"""
+    if device_id not in user_locations:
+        user_locations[device_id] = {"history": []}
+    
+    history = user_locations[device_id].get("history", [])
+    
+    # 새 데이터를 히스토리에 추가
+    history.append({
+        "latitude": new_lat,
+        "longitude": new_lon, 
+        "altitude": new_alt,
+        "timestamp": timezone.now()
+    })
+    
+    # 히스토리 크기 제한
+    if len(history) > GPS_HISTORY_SIZE:
+        history.pop(0)
+    
+    user_locations[device_id]["history"] = history
+    
+    # 이동 평균 계산
+    if len(history) >= 2:
+        # 최근 데이터들의 평균 계산
+        avg_lat = sum(point["latitude"] for point in history) / len(history)
+        avg_lon = sum(point["longitude"] for point in history) / len(history) 
+        avg_alt = sum(point["altitude"] for point in history) / len(history)
+        
+        # 급격한 변화 감지 및 보정
+        if len(history) > 1:
+            prev_lat = history[-2]["latitude"]
+            prev_lon = history[-2]["longitude"]
+            
+            lat_diff = abs(new_lat - prev_lat)
+            lon_diff = abs(new_lon - prev_lon)
+            
+            # 급격한 변화가 감지되면 이전 값과의 가중 평균 사용
+            if lat_diff > GPS_ACCURACY_THRESHOLD or lon_diff > GPS_ACCURACY_THRESHOLD:
+                print(f"🚨 급격한 변화 감지 [{device_id}]: lat_diff={lat_diff:.6f}, lon_diff={lon_diff:.6f}")
+                # 70% 이전값, 30% 새값으로 가중평균
+                avg_lat = prev_lat * 0.7 + new_lat * 0.3
+                avg_lon = prev_lon * 0.7 + new_lon * 0.3
+        
+        return avg_lat, avg_lon, avg_alt
+    else:
+        return new_lat, new_lon, new_alt
+
 # 5초 타임아웃으로 비활성 사용자 정리
 def cleanup_inactive_users():
     global user_locations
@@ -120,27 +178,31 @@ def location_api(request):
                 return JsonResponse({"status": "error", "message": "device_id is required"}, status=400)
 
             if latitude is not None and longitude is not None and altitude is not None:
+                # GPS 데이터 평활화 적용
+                smoothed_lat, smoothed_lon, smoothed_alt = smooth_gps_data(device_id, latitude, longitude, altitude)
+                
                 # 층수 계산을 위해 Location 정보 가져오기
                 calculated_floor = None
                 print(f"로케이션 아이디 층수계산때 쓸거 : {location_id}")
                 if location_id:
                     try:
                         location = Location.objects.get(name=location_id)
-                        calculated_floor = location.calculate_floor_from_altitude(altitude)
+                        calculated_floor = location.calculate_floor_from_altitude(smoothed_alt)
                         print(f"계산된 층수 : {calculated_floor}")
                     except Location.DoesNotExist:
                         pass
 
-                user_locations[device_id] = {
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "altitude": altitude,
+                user_locations[device_id].update({
+                    "latitude": smoothed_lat,
+                    "longitude": smoothed_lon,
+                    "altitude": smoothed_alt,
                     "calculated_floor": calculated_floor,
                     "location_id": location_id,
-                    "last_update": timezone.now()
-                }
+                    "last_update": timezone.now(),
+                    "raw_data": {"lat": latitude, "lon": longitude, "alt": altitude}  # 원본 데이터 보관
+                })
                 
-                print(f"📡 POST 수신 [{device_id}]: 위도={latitude}, 경도={longitude}, 고도={altitude}, 층={calculated_floor}")
+                print(f"📡 POST 수신 [{device_id}]: 원본=({latitude:.6f}, {longitude:.6f}, {altitude:.1f}) → 평활화=({smoothed_lat:.6f}, {smoothed_lon:.6f}, {smoothed_alt:.1f}), 층={calculated_floor}")
                 return JsonResponse({
                     "status": "ok", 
                     "message": "Location received",
