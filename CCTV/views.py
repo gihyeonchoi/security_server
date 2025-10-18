@@ -426,12 +426,12 @@ def background_streaming_status(request):
     try:
         from .models import Camera
         cameras = Camera.objects.all()  # 실시간 DB 조회
-        
+
         status_data = []
         for camera in cameras:
             is_background = camera_streamer.is_background_streaming(camera.rtsp_url)
             camera_status = camera_streamer.get_camera_status(camera.rtsp_url)
-            
+
             status_data.append({
                 'id': camera.id,
                 'name': camera.name,
@@ -442,16 +442,107 @@ def background_streaming_status(request):
                 'avg_fps': camera_status.get('avg_fps', 0),
                 'stream_count': camera_status.get('stream_count', 0)
             })
-        
+
         return JsonResponse({
             'success': True,
             'cameras': status_data,
             'total_cameras': len(cameras),
             'background_active': sum(1 for data in status_data if data['background_streaming'])
         })
-        
+
     except Exception as e:
         return JsonResponse({
             'success': False,
             'error': str(e)
         }, status=500)
+
+@login_required
+def detection_dashboard(request):
+    """탐지 스크린샷 대시보드"""
+    cameras = Camera.objects.all()
+
+    # 필터 파라미터
+    camera_id = request.GET.get('camera_id')
+    alert_only = request.GET.get('alert_only') == 'true'
+    page = int(request.GET.get('page', 1))
+    page_size = 20
+
+    # 기본 쿼리
+    logs = DetectionLog.objects.select_related('camera').all()
+
+    # 카메라 필터
+    if camera_id:
+        logs = logs.filter(camera_id=camera_id)
+
+    # 경고 필터
+    if alert_only:
+        logs = logs.filter(has_alert=True)
+
+    # 스크린샷이 있는 것만
+    logs = logs.exclude(screenshot_path__isnull=True).exclude(screenshot_path='')
+
+    # 페이징
+    total_count = logs.count()
+    start = (page - 1) * page_size
+    end = start + page_size
+    logs = logs[start:end]
+
+    # 이전/다음 페이지 계산
+    has_prev = page > 1
+    has_next = end < total_count
+
+    context = {
+        'cameras': cameras,
+        'logs': logs,
+        'total_count': total_count,
+        'page': page,
+        'page_size': page_size,
+        'has_prev': has_prev,
+        'has_next': has_next,
+        'selected_camera_id': int(camera_id) if camera_id else None,
+        'alert_only': alert_only,
+    }
+
+    return render(request, 'cctv/detection_dashboard.html', context)
+
+@login_required
+def camera_detection_gallery(request, camera_id):
+    """특정 카메라의 탐지 갤러리"""
+    camera = get_object_or_404(Camera, id=camera_id)
+
+    # 필터 파라미터
+    alert_only = request.GET.get('alert_only') == 'true'
+    page = int(request.GET.get('page', 1))
+    page_size = 30
+
+    # 쿼리
+    logs = DetectionLog.objects.filter(camera=camera)
+
+    if alert_only:
+        logs = logs.filter(has_alert=True)
+
+    # 스크린샷이 있는 것만
+    logs = logs.exclude(screenshot_path__isnull=True).exclude(screenshot_path='')
+
+    # 페이징
+    total_count = logs.count()
+    start = (page - 1) * page_size
+    end = start + page_size
+    logs = logs[start:end]
+
+    # 이전/다음 페이지 계산
+    has_prev = page > 1
+    has_next = end < total_count
+
+    context = {
+        'camera': camera,
+        'logs': logs,
+        'total_count': total_count,
+        'page': page,
+        'page_size': page_size,
+        'has_prev': has_prev,
+        'has_next': has_next,
+        'alert_only': alert_only,
+    }
+
+    return render(request, 'cctv/camera_detection_gallery.html', context)
