@@ -15,6 +15,7 @@ from PIL import Image, ImageDraw, ImageFont
 import clip
 import threading
 from datetime import datetime
+from sklearn.cluster import DBSCAN
 
 # 전역 알림 큐 (모든 인스턴스가 공유)
 GLOBAL_ALERT_QUEUE = queue.Queue(maxsize=100)
@@ -1034,12 +1035,107 @@ class AIDetectionSystem:
         
         print(f"🛑 탐지 워커 종료: 카메라 '{camera.name}'")
 
+    # ==================== 클러스터링 헬퍼 함수들 ====================
+
+    def _calculate_iou(self, box1, box2):
+        """두 박스 간 IoU(Intersection over Union) 계산"""
+        x1 = max(box1[0], box2[0])
+        y1 = max(box1[1], box2[1])
+        x2 = min(box1[2], box2[2])
+        y2 = min(box1[3], box2[3])
+
+        intersection = max(0, x2 - x1) * max(0, y2 - y1)
+        area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+        area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+        union = area1 + area2 - intersection
+
+        return intersection / union if union > 0 else 0
+
+    def _get_box_center(self, box):
+        """박스의 중심점 계산"""
+        cx = (box[0] + box[2]) / 2
+        cy = (box[1] + box[3]) / 2
+        return np.array([cx, cy])
+
+    def _calculate_distance(self, box1, box2):
+        """두 박스 중심점 간 유클리드 거리"""
+        center1 = self._get_box_center(box1)
+        center2 = self._get_box_center(box2)
+        return np.linalg.norm(center1 - center2)
+
+    def _merge_boxes(self, boxes):
+        """여러 박스를 하나의 큰 박스로 병합"""
+        x1 = min(box[0] for box in boxes)
+        y1 = min(box[1] for box in boxes)
+        x2 = max(box[2] for box in boxes)
+        y2 = max(box[3] for box in boxes)
+        return np.array([x1, y1, x2, y2])
+
+    def _cluster_person_boxes(self, boxes, distance_threshold=150, iou_threshold=0.3):
+        """
+        거리와 IoU를 고려한 person 박스 클러스터링
+
+        Args:
+            boxes: person 박스 리스트 [[x1,y1,x2,y2], ...]
+            distance_threshold: 박스 중심점 간 최대 거리 (픽셀)
+            iou_threshold: IoU 임계값 (겹치는 박스를 하나로 간주)
+
+        Returns:
+            clustered_boxes: [{'box': [x1,y1,x2,y2], 'count': N, 'original_boxes': [...]}, ...]
+        """
+        if len(boxes) == 0:
+            return []
+
+        n = len(boxes)
+
+        # 거리 행렬 계산
+        distances = np.zeros((n, n))
+        for i in range(n):
+            for j in range(i+1, n):
+                iou = self._calculate_iou(boxes[i], boxes[j])
+                if iou > iou_threshold:
+                    # IoU가 높으면 거리를 0으로 (같은 클러스터로 묶임)
+                    distances[i, j] = 0
+                    distances[j, i] = 0
+                else:
+                    # IoU가 낮으면 실제 거리 사용
+                    dist = self._calculate_distance(boxes[i], boxes[j])
+                    distances[i, j] = dist
+                    distances[j, i] = dist
+
+        # DBSCAN 클러스터링
+        clustering = DBSCAN(eps=distance_threshold, min_samples=1, metric='precomputed')
+        labels = clustering.fit_predict(distances)
+
+        # 클러스터별로 박스 그룹화
+        clusters = {}
+        for i, label in enumerate(labels):
+            if label not in clusters:
+                clusters[label] = []
+            clusters[label].append(boxes[i])
+
+        # 각 클러스터를 하나의 큰 박스로 병합
+        clustered_boxes = []
+        for cluster_id, cluster_boxes in clusters.items():
+            merged_box = self._merge_boxes(cluster_boxes)
+            clustered_boxes.append({
+                'box': merged_box,
+                'count': len(cluster_boxes),
+                'cluster_id': cluster_id,
+                'original_boxes': cluster_boxes
+            })
+
+        return clustered_boxes
+
+    # ==================== 객체 탐지 함수 ====================
+
     def _detect_objects(self, frame, target_labels, camera):
         """
-        person 객체만 탐지하는 Softmax 방식 객체 탐지
+        person 객체만 탐지하는 Softmax 방식 객체 탐지 (클러스터링 적용)
         - YOLO에서 person 클래스만 필터링
+        - 겹치거나 가까운 person 박스를 클러스터링으로 그룹화
         - CLIP이 모든 라벨 + "other object"를 동시에 비교
-        - person 객체 탐지 시 15% 확장된 영역 사용
+        - person 객체 탐지 시 20% 확장된 영역 사용
         """
         detections = []
         
@@ -1082,9 +1178,20 @@ class AIDetectionSystem:
                 person_boxes = boxes[person_mask]
                 person_confidences = confidences[person_mask]
                 person_classes = classes[person_mask]
-                
+
                 print(f"📊 YOLO person 객체: {len(person_boxes)}개 탐지")
-                
+
+                # 1.5. person 박스 클러스터링 (겹치거나 가까운 박스 병합)
+                clustered_groups = self._cluster_person_boxes(
+                    person_boxes,
+                    distance_threshold=150,  # 중심점 간 최대 거리 (픽셀)
+                    iou_threshold=0.3        # IoU 임계값 (30% 이상 겹치면 병합)
+                )
+
+                print(f"🔗 클러스터링 결과: {len(person_boxes)}개 박스 → {len(clustered_groups)}개 그룹")
+                for group_idx, group_info in enumerate(clustered_groups):
+                    print(f"   그룹 {group_idx+1}: {group_info['count']}명")
+
                 # 2. CLIP을 위한 텍스트 준비 (DB 라벨 + "other object")
                 text_queries = []
                 label_indices = []  # 각 쿼리가 어떤 라벨에 해당하는지 추적
@@ -1114,33 +1221,34 @@ class AIDetectionSystem:
                 
                 # print(f"🔧 현재 CLIP_CONFIDENCE_THRESHOLD: {CLIP_CONFIDENCE_THRESHOLD}")
 
-                # 4. 각 person 박스에 대해 CLIP으로 분류
-                for box_idx, (box, yolo_conf, cls) in enumerate(zip(person_boxes, person_confidences, person_classes)):
-                    x1, y1, x2, y2 = map(int, box)
-                    
-                    # person 박스 크기를 20% 확장
-                    box_scale_extend = 0.2
+                # 4. 각 클러스터링된 그룹에 대해 CLIP으로 분류
+                for group_idx, group_info in enumerate(clustered_groups):
+                    merged_box = group_info['box']
+                    person_count = group_info['count']
+
+                    x1, y1, x2, y2 = map(int, merged_box)
+
+                    # 병합된 박스를 10% 확장
+                    box_scale_extend = 0.1
 
                     box_width = x2 - x1
                     box_height = y2 - y1
                     expand_w = int(box_width * box_scale_extend)
                     expand_h = int(box_height * box_scale_extend)
-                    
+
                     # 프레임 경계 내에서 확장
                     frame_h, frame_w = frame.shape[:2]
                     x1_expanded = max(0, x1 - expand_w)
                     y1_expanded = max(0, y1 - expand_h)
                     x2_expanded = min(frame_w, x2 + expand_w)
                     y2_expanded = min(frame_h, y2 + expand_h)
-                    
+
                     cropped_region = frame[y1_expanded:y2_expanded, x1_expanded:x2_expanded]
-                    
+
                     if cropped_region.size == 0:
                         continue
-                    
-                    # person 클래스 확인
-                    yolo_class = class_names.get(int(cls), 'person')
-                    print(f"👤 person 객체 박스 {box_idx}: {yolo_class} (conf: {yolo_conf:.2f}, 확장: 15%)")
+
+                    print(f"👥 그룹 {group_idx+1}: {person_count}명 (박스 확장: 20%)")
                     
                     # CLIP으로 이미지 인코딩
                     pil_crop = Image.fromarray(cv2.cvtColor(cropped_region, cv2.COLOR_BGR2RGB))
@@ -1182,13 +1290,14 @@ class AIDetectionSystem:
                     target_label = target_labels[label_idx]
                     
                     print(f"      ✅ '{target_label.display_name}'로 탐지! (신뢰도: {best_prob:.2f})")
-                    
+
+                    # 그룹 정보를 포함하여 저장
                     label_detections[label_idx].append({
                         'box': [x1, y1, x2, y2],
                         'confidence': best_prob,
-                        'yolo_confidence': float(yolo_conf),
                         'clip_probability': best_prob,
-                        'yolo_class': yolo_class
+                        'person_count': person_count,  # 그룹 내 person 수
+                        'cluster_id': group_info['cluster_id']
                     })
                 
                 # 5. 각 라벨별로 탐지 결과 생성
@@ -1222,7 +1331,19 @@ class AIDetectionSystem:
         
         return detections
 
+    # ==================== 백업: 기존 _detect_objects 함수 (클러스터링 미적용) ====================
+    # 오류 발생 시 아래 주석을 해제하고 위의 _detect_objects 함수를 주석 처리하세요
+    # def _detect_objects_backup_without_clustering(self, frame, target_labels, camera):
+    #     """
+    #     [백업 함수] person 객체만 탐지하는 Softmax 방식 객체 탐지 (클러스터링 미적용 버전)
+    #     - YOLO에서 person 클래스만 필터링
+    #     - CLIP이 모든 라벨 + "other object"를 동시에 비교
+    #     - person 객체 탐지 시 20% 확장된 영역 사용
+    #     """
+    #     # ... 기존 코드 (1037-1223줄 내용과 동일)
+    #     pass
 
+    # ==================== 더 오래된 백업 함수 ====================
     # def _detect_objects(self, frame, target_labels):
     #     """프레임에서 객체 탐지 - 바운딩 박스 정보 포함"""
     #     detections = []
